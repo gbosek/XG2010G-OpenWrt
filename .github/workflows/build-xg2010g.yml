@@ -1,0 +1,16 @@
+name: Build XG2010G Test-1
+
+on:
+  workflow_dispatch:
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build baseline guard
+        run: |
+          echo "XG2010G / 7581PT Test-1"
+          echo "Build is intentionally gated until the exact Linux 6.18 source baseline and required XG2010G PON/PPE + RTL8261 patches are pinned in this repository."
+          echo "Do not publish a flashable image from an incomplete source tree."
+          exit 1

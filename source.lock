@@ -1,0 +1,12 @@
+# Public reference source used only to build the Test-1 RTL8261 module candidate.
+# It is NOT treated as the authoritative XG2010G board definition.
+SOURCE_REPO=https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+SOURCE_COMMIT=015b95c23e4475ba6a4626ab38115b2690dbd3f1
+KERNEL_FAMILY=6.18
+
+# Golden board facts come from the user's known-good XG2010G 6.18.44 binary and stock backups:
+# RTL8261BE @ 0x08 reset GPIO27, host PCS 0x1fa04000
+# RTL8261BE @ 0x05 reset GPIO29, host PCS 0x1fa09000
+# EN8811H @ 0x0f, 2500BASE-X, host PCS 0x1fa07000
+# PON calibration = DSD/factory offset 0x12000 length 0x200
+# NPU/PPE baseline keeps QDMA_WAN_ETHER (wan_mode=1)

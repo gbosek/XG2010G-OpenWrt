@@ -6,8 +6,11 @@ on:
     paths:
       - '.github/workflows/build-xg2010g.yml'
       - 'source.lock'
-      - 'docs/**'
   workflow_dispatch:
+
+concurrency:
+  group: xg2010g-test1-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git

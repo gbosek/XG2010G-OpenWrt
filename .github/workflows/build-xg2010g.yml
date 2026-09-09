@@ -1,16 +1,95 @@
-name: Build XG2010G Test-1
+name: Build XG2010G Test-1 Candidate
 
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-xg2010g.yml'
+      - 'source.lock'
+      - 'docs/**'
   workflow_dispatch:
 
+env:
+  SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+  SOURCE_COMMIT: 015b95c23e4475ba6a4626ab38115b2690dbd3f1
+
 jobs:
-  guard:
+  build-reference:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build baseline guard
+
+      - name: Install build dependencies
         run: |
-          echo "XG2010G / 7581PT Test-1"
-          echo "Build is intentionally gated until the exact Linux 6.18 source baseline and required XG2010G PON/PPE + RTL8261 patches are pinned in this repository."
-          echo "Do not publish a flashable image from an incomplete source tree."
-          exit 1
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git \
+            libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc
+
+      - name: Clone pinned public XG2010G source snapshot
+        run: |
+          git clone --filter=blob:none "$SOURCE_REPO" src
+          cd src
+          git checkout "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+      - name: Verify RTL8261 Test-1 fixes exist in source
+        run: |
+          cd src
+          test -f target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
+          test -f target/linux/airoha/patches-6.18/744-net-phy-realtek-reapply-RTK-SerDes-after-aneg.patch
+          grep -q '0x80aa' target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
+          grep -q '0x5078' target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
+          grep -q '10000, 12000' target/linux/airoha/patches-6.18/744-net-phy-realtek-reapply-RTK-SerDes-after-aneg.patch
+
+      - name: Install feeds
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure XG2010G reference build
+        run: |
+          cd src
+          cp config.seed .config
+          sed -i -e '/^CONFIG_VERSION_DIST=/d' -e '/^CONFIG_VERSION_NUMBER=/d' .config
+          echo 'CONFIG_VERSION_DIST="XG2010G-Test1"' >> .config
+          echo 'CONFIG_VERSION_NUMBER="reference-module-build"' >> .config
+          make defconfig
+
+      - name: Download sources
+        run: |
+          cd src
+          make download -j$(nproc)
+
+      - name: Build reference firmware and RTL8261 module
+        run: |
+          cd src
+          make -j2 world 2>&1 | tee ../build.log
+
+      - name: Collect candidate artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          cp build.log out/ 2>/dev/null || true
+          find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
+          find src/build_dir -type f -name 'realtek.ko' -exec cp -v {} out/realtek-test1.ko \; -quit 2>/dev/null || true
+          if [ -f out/realtek-test1.ko ]; then
+            modinfo out/realtek-test1.ko | tee out/realtek-test1.modinfo.txt || true
+            sha256sum out/realtek-test1.ko | tee out/realtek-test1.sha256
+            strings out/realtek-test1.ko | grep -E 'RTL8261BE|RTL8261N' | sort -u | tee out/realtek-test1.strings.txt || true
+          fi
+          (cd out && sha256sum *.itb 2>/dev/null || true) > out/itb.sha256
+
+      - name: Upload reference build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xg2010g-test1-reference
+          path: out/
+          retention-days: 14
+
+      - name: Safety note
+        if: always()
+        run: |
+          echo 'This job builds a reference candidate only.'
+          echo 'Do NOT flash the generated reference sysupgrade until it has been compared against the known-good XG2010G 6.18.44 binary board data and PON/PPE ABI.'

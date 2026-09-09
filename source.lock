@@ -1,8 +1,18 @@
 # Public reference source used only to build the Test-1 RTL8261 module candidate.
 # It is NOT treated as the authoritative XG2010G board definition.
+#
+# The user's known-good firmware identifies itself as:
+#   ImmortalWrt SNAPSHOT r40915+7-d2dc130d7f
+# and its installed kernel package is:
+#   6.18.44~4bcb1a05b9697b9f4a10913f6a454cb7-r1
+# Therefore Test-1 now pins the XG2010G tree at the matching d2dc130d7f
+# merge point instead of the newer 2026-09-07 tree. This minimizes PHY-driver
+# drift while preserving the XG2010G branch context.
 SOURCE_REPO=https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
-SOURCE_COMMIT=015b95c23e4475ba6a4626ab38115b2690dbd3f1
+SOURCE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7
 KERNEL_FAMILY=6.18
+EXPECTED_KERNEL_RELEASE=6.18.44
+EXPECTED_KERNEL_ABI=4bcb1a05b9697b9f4a10913f6a454cb7
 
 # Golden board facts come from the user's known-good XG2010G 6.18.44 binary and stock backups:
 # RTL8261BE @ 0x08 reset GPIO27, host PCS 0x1fa04000

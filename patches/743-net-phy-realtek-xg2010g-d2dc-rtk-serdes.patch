@@ -1,8 +1,8 @@
 From: XG2010G Test-1
 Subject: [PATCH] net: phy: realtek: restore optional RTK SerDes patch on d2dc130d
 
-Adapt the optional RTL826x host SerDes tuning to the 6.18.44 Realtek
-baseline used by d2dc130d. Keep it opt-in through
+Adapt the optional RTL826x host SerDes tuning to the exact 6.18.44
+Realtek baseline used by d2dc130d. Keep it opt-in through
 realtek,patch-rtk-serdes and append the two flow_s writes to the loaded
 firmware patch database.
 
@@ -17,7 +17,7 @@ firmware patch database.
  	int ret;
  
  	ret = request_firmware_direct(&fw, fw_name, dev);
-@@ -253,17 +253,42 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
+@@ -253,15 +253,40 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
  
  	patches = (struct rtlgen_hwpatch *)fw->data;
  	count = fw->size / sizeof(*patches);

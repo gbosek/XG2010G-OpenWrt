@@ -1,0 +1,146 @@
+name: Build XG2010G Test-2 LAN2+10G
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-xg2010g-test2.yml'
+      - 'source.lock'
+      - 'patches/**'
+  workflow_dispatch:
+
+concurrency:
+  group: xg2010g-test2-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+  # b6bd44a is the XG2010G UBI-FIT board point and contains the actual
+  # an7581-gemtek-xg2010g.dts.  d2dc130d alone predates that board file.
+  SOURCE_COMMIT: b6bd44a7caf1b6979f1cb30433e33637b69e791e
+  CONFIG_REPO_RAW: https://raw.githubusercontent.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G/b6bd44a7caf1b6979f1cb30433e33637b69e791e/config.seed
+
+jobs:
+  build-test2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git \
+            libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+
+      - name: Clone XG2010G board baseline
+        run: |
+          git clone --filter=blob:none "$SOURCE_REPO" src
+          cd src
+          git checkout "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test -f target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          grep -q 'an7581-nokia_xg-040g-md-common.dtsi' target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          printf 'source_commit=%s\n' "$(git rev-parse HEAD)" | tee ../source-baseline.txt
+          git show -s --format='source_date=%cI%nsource_subject=%s' HEAD | tee -a ../source-baseline.txt
+
+      - name: Verify Linux 6.18.44 and PHY baseline
+        run: |
+          cd src
+          grep -q '^LINUX_VERSION-6.18 = 6.18.44$' include/kernel-6.18 2>/dev/null || grep -R -q '6\.18\.44' include target/linux
+          test -f target/linux/generic/pending-6.18/742-net-phy-realtek-add-5G-and-10G-PHY-support.patch
+          grep -q 'rtl8261be_match_phy_device' target/linux/generic/pending-6.18/742-net-phy-realtek-add-5G-and-10G-PHY-support.patch
+          grep -q 'ethernet-phy@f' target/linux/airoha/dts/an7581-nokia_xg-040g-md-common.dtsi
+          grep -q 'reg = <0xf>;' target/linux/airoha/dts/an7581-nokia_xg-040g-md-common.dtsi
+          grep -q 'phy-mode = "2500base-x";' target/linux/airoha/dts/an7581-nokia_xg-040g-md-common.dtsi
+
+      - name: Inject RTL8261 host-SerDes fixes
+        run: |
+          cd src
+          cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch \
+            target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          cp ../patches/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch \
+            target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
+          grep -q 'realtek,patch-rtk-serdes' target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+
+      - name: Apply XG2010G LAN2 2.5G board mapping
+        run: |
+          cd src
+          patch -p1 < ../patches/745-airoha-xg2010g-fix-lan1-lan2-2p5g-map.patch
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          grep -A5 '&gsw_port2' "$DTS" | grep -q 'label = "lan1";'
+          grep -A8 '&gdm4' "$DTS" | grep -q 'openwrt,netdev-name = "lan2";'
+          grep -A8 '&gdm4' "$DTS" | grep -q 'phy-handle = <&en8811>;'
+          grep -A8 '&gdm4' "$DTS" | grep -q 'phy-mode = "2500base-x";'
+          git diff --check
+          git diff -- target/linux/airoha/dts/an7581-gemtek-xg2010g.dts | tee ../test2-dts.diff
+
+      - name: Install feeds
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure XG2010G Test-2
+        run: |
+          cd src
+          curl -fL "$CONFIG_REPO_RAW" -o .config
+          grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y$' .config
+          sed -i -e '/^CONFIG_VERSION_DIST=/d' -e '/^# CONFIG_VERSION_DIST is not set$/d' \
+                 -e '/^CONFIG_VERSION_NUMBER=/d' -e '/^# CONFIG_VERSION_NUMBER is not set$/d' .config
+          echo 'CONFIG_VERSION_DIST="XG2010G-Test2"' >> .config
+          echo 'CONFIG_VERSION_NUMBER="6.18.44-lan2-2p5g-rtl8261"' >> .config
+          make defconfig
+          grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y$' .config
+
+      - name: Download sources
+        run: |
+          cd src
+          make download -j$(nproc)
+
+      - name: Build Test-2 firmware
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          if ! make -j2 world 2>&1 | tee ../build-test2.log; then
+            echo 'Parallel build failed; rerunning target/linux serially with V=s.' | tee ../kernel-error-test2.log
+            make -j1 V=s target/linux/compile 2>&1 | tee -a ../kernel-error-test2.log
+            exit 1
+          fi
+
+      - name: Collect artifacts and DT/ABI diagnostics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          cp build-test2.log out/ 2>/dev/null || true
+          cp kernel-error-test2.log out/ 2>/dev/null || true
+          cp source-baseline.txt test2-dts.diff out/ 2>/dev/null || true
+          find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
+          find src/build_dir -type f -name 'realtek.ko' -exec cp -v {} out/realtek-test2.ko \; -quit 2>/dev/null || true
+          find src/build_dir -type f \( -name '*gemtek*xg2010g*.dtb' -o -name '*xg2010g*.dtb' \) -exec cp -v {} out/xg2010g-test2.dtb \; -quit 2>/dev/null || true
+          if [ -f out/xg2010g-test2.dtb ]; then
+            dtc -I dtb -O dts out/xg2010g-test2.dtb > out/xg2010g-test2.decompiled.dts || true
+            grep -n -E 'lan1|lan2|2500base-x|ethernet-phy@f' out/xg2010g-test2.decompiled.dts > out/xg2010g-test2.dt-check.txt || true
+          fi
+          if [ -f out/realtek-test2.ko ]; then
+            modinfo out/realtek-test2.ko | tee out/realtek-test2.modinfo.txt || true
+            sha256sum out/realtek-test2.ko | tee out/realtek-test2.sha256
+            stat -c 'size=%s' out/realtek-test2.ko | tee out/realtek-test2.size.txt
+            nm -u out/realtek-test2.ko | sed 's/^.* U //' | sort -u | tee out/realtek-test2.undefined.txt || true
+          fi
+          (cd out && sha256sum *.itb 2>/dev/null || true) > out/itb.sha256
+
+      - name: Upload Test-2 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xg2010g-test2-lan2-rtl8261
+          path: out/
+          retention-days: 14
+
+      - name: Safety gate
+        if: always()
+        run: |
+          echo 'Do not flash until DT mapping, realtek ABI, PON/PPE/NPU preservation and image contents are reviewed.'
+          echo 'LAN2 acceptance requires both 2.5G and 1G copper autonegotiation with carrier and traffic.'

@@ -1,0 +1,39 @@
+#!/bin/sh
+
+mode="$1"
+
+print_common() {
+  echo "Kernel: $(uname -r 2>/dev/null)"
+  echo "Board: $(cat /tmp/sysinfo/board_name 2>/dev/null)"
+  echo "Interfaces: $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
+}
+
+case "$mode" in
+  pon)
+    echo "=== XG2010G PON diagnostics ==="
+    print_common
+    echo
+    echo "--- kernel log ---"
+    dmesg 2>/dev/null | grep -Ei 'xpon|pon|omci|oam|bosa|los|ploam|gem' | tail -n 120
+    echo
+    echo "--- candidate sysfs/debugfs nodes ---"
+    find /sys -maxdepth 4 \( -iname '*pon*' -o -iname '*xpon*' -o -iname '*bosa*' \) 2>/dev/null | head -n 80
+    ;;
+  npu)
+    echo "=== XG2010G NPU/PPE/QDMA diagnostics ==="
+    print_common
+    echo
+    echo "--- kernel log ---"
+    dmesg 2>/dev/null | grep -Ei 'airoha-npu|npu|ppe|qdma|foe|flow.?offload' | tail -n 160
+    echo
+    echo "--- flow offload / nftables ---"
+    nft list flowtables 2>/dev/null || true
+    echo
+    echo "--- candidate proc/sysfs/debugfs nodes ---"
+    find /proc /sys/kernel/debug /sys -maxdepth 4 \( -iname '*npu*' -o -iname '*ppe*' -o -iname '*qdma*' -o -iname '*foe*' \) 2>/dev/null | head -n 120
+    ;;
+  *)
+    echo "usage: $0 pon|npu" >&2
+    exit 2
+    ;;
+esac

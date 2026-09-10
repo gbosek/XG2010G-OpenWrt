@@ -14,5 +14,13 @@
       "type": "view",
       "path": "xg2010g/npu"
     }
+  },
+  "admin/status/xg2010g-dsd": {
+    "title": "XG2010G DSD / Calibration",
+    "order": 82,
+    "action": {
+      "type": "view",
+      "path": "xg2010g/dsd"
+    }
   }
 }

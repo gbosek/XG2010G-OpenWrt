@@ -8,7 +8,7 @@ up but the attached netdev carrier is still down.
 
 --- a/drivers/net/phy/realtek/phy_patch_rtl826x.c
 +++ b/drivers/net/phy/realtek/phy_patch_rtl826x.c
-@@ -117,6 +117,36 @@ static int rtl826x_phy_patch_sds_mask(struct phy_device *phydev, u32 sds_page,
+@@ -117,6 +117,36 @@
  	return rtl826x_phy_patch_sds_set(phydev, sds_page, sds_reg, (ret & ~mask) | data);
  }
  
@@ -40,18 +40,9 @@ up but the attached netdev carrier is still down.
  static int rtl826x_phy_patch_op(struct phy_device *phydev, const struct rtlgen_hwpatch *patch)
  {
  	u32 mask = GENMASK(patch->msb, patch->lsb);
---- a/drivers/net/phy/realtek/phy_patch_rtl826x.h
-+++ b/drivers/net/phy/realtek/phy_patch_rtl826x.h
-@@ -13,5 +13,6 @@ int rtl826x_phy_patch_sds_set(struct phy_device *phydev, u32 sds_page,
- 			      u32 sds_reg, u32 data);
- int rtl8261n_phy_patch_db_init(struct phy_device *phydev);
- int rtl8264b_phy_patch_db_init(struct phy_device *phydev);
-+int rtl826x_phy_patch_rtk_serdes(struct phy_device *phydev);
- 
- #endif
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
-@@ -8,10 +8,20 @@
+@@ -8,10 +8,22 @@
  #include "phy_patch.h"
  #include "phy_patch_rtl826x.h"
  
@@ -61,6 +52,8 @@ up but the attached netdev carrier is still down.
 +	RTL826X_RTK_SERDES_RELEASE,
 +	RTL826X_RTK_SERDES_CHECK_CARRIER,
 +};
++
++int rtl826x_phy_patch_rtk_serdes(struct phy_device *phydev);
 +
  struct rtl826x_priv {
  	struct rtlgen_phy_patch_db *patch;

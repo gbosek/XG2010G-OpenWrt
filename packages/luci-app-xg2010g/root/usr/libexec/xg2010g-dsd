@@ -1,0 +1,50 @@
+#!/bin/sh
+set -eu
+
+cmd="${1:-status}"
+TMP=/tmp/xg2010g-dsd.bin
+CAL=/tmp/xg2010g-calibration.bin
+
+find_mtd() {
+  awk -F: '$2 ~ /"dsd"/ {gsub("mtd", "/dev/mtd", $1); print $1; exit}' /proc/mtd 2>/dev/null || true
+}
+
+case "$cmd" in
+  status)
+    echo "XG2010G DSD / calibration"
+    echo "DSD device: $(find_mtd)"
+    [ -f "$TMP" ] && echo "Uploaded staging file: $TMP ($(wc -c < "$TMP") bytes)" || echo "Uploaded staging file: none"
+    [ -f "$CAL" ] && echo "Extracted calibration: $CAL ($(wc -c < "$CAL") bytes)" || true
+    echo "Calibration window: DSD offset 0x12000, length 0x200 (512 bytes)"
+    echo "Safety: this helper never erases or writes NAND. Import-to-flash remains disabled until real-hardware validation."
+    ;;
+  backup)
+    d="$(find_mtd)"
+    [ -n "$d" ] || { echo "DSD MTD not found" >&2; exit 2; }
+    dd if="$d" of=/tmp/xg2010g-dsd-backup.bin bs=64K 2>/dev/null
+    sha256sum /tmp/xg2010g-dsd-backup.bin
+    ;;
+  check)
+    f="${2:-$TMP}"
+    [ -f "$f" ] || { echo "File not found: $f" >&2; exit 2; }
+    n="$(wc -c < "$f")"
+    [ "$n" -ge 74240 ] || { echo "DSD image too small: $n bytes" >&2; exit 3; }
+    echo "File: $f"
+    echo "Size: $n"
+    sha256sum "$f"
+    dd if="$f" bs=1 skip=$((0x12000)) count=$((0x200)) of="$CAL" 2>/dev/null
+    echo "Calibration SHA256: $(sha256sum "$CAL" | awk '{print $1}')"
+    echo "Validation result: calibration window extracted; no flash write performed."
+    ;;
+  extract)
+    f="${2:-$TMP}"
+    [ -f "$f" ] || { echo "File not found: $f" >&2; exit 2; }
+    dd if="$f" bs=1 skip=$((0x12000)) count=$((0x200)) of="$CAL" 2>/dev/null
+    [ "$(wc -c < "$CAL")" -eq 512 ] || { echo "Calibration extraction failed" >&2; exit 3; }
+    sha256sum "$CAL"
+    ;;
+  *)
+    echo "usage: $0 {status|backup|check [file]|extract [file]}" >&2
+    exit 1
+    ;;
+esac

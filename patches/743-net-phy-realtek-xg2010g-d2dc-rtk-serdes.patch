@@ -1,78 +1,18 @@
 From: XG2010G Test-2
-Subject: [PATCH] net: phy: realtek: add XG2010G RTL8261 host SerDes tuning
+Subject: [PATCH] net: phy: realtek: reapply XG2010G RTL8261 SerDes tuning
 
-Layer the XG2010G-specific RTL8261 host-side SerDes tuning on top of the
-existing 743 RTL8261N/RTL8261BE delayed USXGMII reset workaround already
-present in the b6bd44a Linux 6.18.44 baseline.
+Keep the Linux 6.18.44 baseline RTL8261 delayed USXGMII reset workaround
+intact and add only the XG2010G-specific host-SerDes tuning required after
+that reset.  The tuning is opt-in through realtek,patch-rtk-serdes.
 
-Keep the tuning opt-in through realtek,patch-rtk-serdes. Append the two
-flow_s values to the firmware patch database for initial configuration,
-and re-apply them after the baseline delayed SerDes reset releases the
-USXGMII block. This deliberately reuses the baseline recovery worker
-instead of adding a second carrier/retry state machine.
+Do not extend the firmware patch database here.  Test-2 only needs to
+re-apply the two host-side SerDes values immediately after the existing
+743 reset worker releases the block.  This keeps the ABI/dependency delta
+minimal and avoids overlapping hunks in phy_patch_rtl826x.c.
 
---- a/drivers/net/phy/realtek/phy_patch_rtl826x.c
-+++ b/drivers/net/phy/realtek/phy_patch_rtl826x.c
-@@ -230,7 +230,7 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
- 	struct rtlgen_phy_patch_db *patch_db;
- 	struct rtlgen_hwpatch *patches;
- 	const struct firmware *fw;
--	size_t count;
-+	size_t count, extra_count, total_count;
- 	int ret;
- 
- 	ret = request_firmware_direct(&fw, fw_name, dev);
-@@ -253,15 +253,43 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
- 
- 	patches = (struct rtlgen_hwpatch *)fw->data;
- 	count = fw->size / sizeof(*patches);
-+	priv->patch_rtk_serdes =
-+		device_property_read_bool(dev, "realtek,patch-rtk-serdes");
-+	extra_count = priv->patch_rtk_serdes ? 2 : 0;
-+	total_count = count + extra_count;
-+	if (total_count < count) {
-+		ret = -EOVERFLOW;
-+		goto out;
-+	}
- 
--	patch_db = devm_kzalloc(dev, struct_size(patch_db, conf, count), GFP_KERNEL);
-+	patch_db = devm_kzalloc(dev, struct_size(patch_db, conf, total_count), GFP_KERNEL);
- 	if (!patch_db) {
- 		ret = -ENOMEM;
- 		goto out;
- 	}
- 
--	patch_db->count = count;
-+	patch_db->count = total_count;
- 	patch_db->patch_op_exec = rtl826x_phy_patch_op;
- 
- 	memcpy(patch_db->conf, patches, flex_array_size(patch_db, conf, count));
-+	if (priv->patch_rtk_serdes) {
-+		patch_db->conf[count] = (struct rtlgen_hwpatch) {
-+			.patch_op = RTK_PATCH_OP_PSDS0,
-+			.portmask = 0xff,
-+			.pagemmd = cpu_to_le16(0x07),
-+			.addr = cpu_to_le16(0x10),
-+			.msb = 15,
-+			.lsb = 0,
-+			.data = cpu_to_le16(0x80aa),
-+		};
-+		patch_db->conf[count + 1] = (struct rtlgen_hwpatch) {
-+			.patch_op = RTK_PATCH_OP_PSDS0,
-+			.portmask = 0xff,
-+			.pagemmd = cpu_to_le16(0x06),
-+			.addr = cpu_to_le16(0x12),
-+			.msb = 15,
-+			.lsb = 0,
-+			.data = cpu_to_le16(0x5078),
-+		};
-+	}
- 
- 	priv->patch = patch_db;
- 
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
-@@ -11,9 +11,10 @@ struct rtl826x_priv {
+@@ -11,10 +11,11 @@ struct rtl826x_priv {
  	struct rtlgen_phy_patch_db *patch;
  	bool enable_pma_low_power:1;
  	struct phy_device *phydev;
@@ -97,3 +37,12 @@ instead of adding a second carrier/retry state machine.
  	schedule_delayed_work(&priv->sds_work,
  			      msecs_to_jiffies(RTL826X_SDS_POLL_MS));
  }
+@@ -3007,6 +3012,8 @@ static int rtl826x_probe(struct phy_device *phydev)
+ 		return -ENOMEM;
+ 
+ 	priv->enable_pma_low_power = device_property_read_bool(dev, "realtek,enable-pma-low-power");
++	priv->patch_rtk_serdes =
++		device_property_read_bool(dev, "realtek,patch-rtk-serdes");
+ 	priv->phydev = phydev;
+ 	phydev->priv = priv;
+ 

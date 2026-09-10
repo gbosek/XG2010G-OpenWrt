@@ -1,10 +1,15 @@
-From: XG2010G Test-1
-Subject: [PATCH] net: phy: realtek: restore optional RTK SerDes patch on d2dc130d
+From: XG2010G Test-2
+Subject: [PATCH] net: phy: realtek: add XG2010G RTL8261 host SerDes tuning
 
-Adapt the optional RTL826x host SerDes tuning to the exact 6.18.44
-Realtek baseline used by d2dc130d. Keep it opt-in through
-realtek,patch-rtk-serdes and append the two flow_s writes to the loaded
-firmware patch database.
+Layer the XG2010G-specific RTL8261 host-side SerDes tuning on top of the
+existing 743 RTL8261N/RTL8261BE delayed USXGMII reset workaround already
+present in the b6bd44a Linux 6.18.44 baseline.
+
+Keep the tuning opt-in through realtek,patch-rtk-serdes. Append the two
+flow_s values to the firmware patch database for initial configuration,
+and re-apply them after the baseline delayed SerDes reset releases the
+USXGMII block. This deliberately reuses the baseline recovery worker
+instead of adding a second carrier/retry state machine.
 
 --- a/drivers/net/phy/realtek/phy_patch_rtl826x.c
 +++ b/drivers/net/phy/realtek/phy_patch_rtl826x.c
@@ -65,21 +70,37 @@ firmware patch database.
  
 --- a/drivers/net/phy/realtek/realtek.h
 +++ b/drivers/net/phy/realtek/realtek.h
-@@ -11,6 +11,7 @@ struct rtl826x_priv {
+@@ -11,10 +11,11 @@ struct rtl826x_priv {
  	struct rtlgen_phy_patch_db *patch;
  	bool enable_pma_low_power:1;
+ 	struct phy_device *phydev;
+ 	struct delayed_work sds_work;
+ 	bool sds_work_disabled;
+ 	unsigned int sds_retries;
 +	bool patch_rtk_serdes:1;
  };
  
  int rtl822x_hwmon_init(struct phy_device *phydev);
 --- a/drivers/net/phy/realtek/realtek_main.c
 +++ b/drivers/net/phy/realtek/realtek_main.c
-@@ -2368,6 +2368,8 @@ static int rtl826x_probe(struct phy_device *phydev)
+@@ -2968,6 +2968,13 @@ static void rtl826x_sds_reset_work(struct work_struct *work)
+ 	rtl826x_phy_patch_sds_set(phydev, RTL826X_SDS_PAGE_RESET,
+ 				  RTL826X_SDS_REG_RESET, RTL826X_SDS_RESET_RELEASE);
+ 
++	if (priv->patch_rtk_serdes) {
++		rtl826x_phy_patch_sds_set(phydev, 0x07, 0x10, 0x80aa);
++		rtl826x_phy_patch_sds_set(phydev, 0x06, 0x12, 0x5078);
++	}
++
+ 	schedule_delayed_work(&priv->sds_work,
+ 			      msecs_to_jiffies(RTL826X_SDS_POLL_MS));
+ }
+@@ -3007,6 +3014,8 @@ static int rtl826x_probe(struct phy_device *phydev)
  		return -ENOMEM;
  
  	priv->enable_pma_low_power = device_property_read_bool(dev, "realtek,enable-pma-low-power");
 +	priv->patch_rtk_serdes =
 +		device_property_read_bool(dev, "realtek,patch-rtk-serdes");
+ 	priv->phydev = phydev;
  	phydev->priv = priv;
  
- 	if (!priv->enable_pma_low_power)

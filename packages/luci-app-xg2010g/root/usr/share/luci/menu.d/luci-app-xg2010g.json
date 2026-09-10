@@ -1,0 +1,18 @@
+{
+  "admin/status/xg2010g-pon": {
+    "title": "XG2010G PON",
+    "order": 80,
+    "action": {
+      "type": "view",
+      "path": "xg2010g/pon"
+    }
+  },
+  "admin/status/xg2010g-npu": {
+    "title": "XG2010G NPU",
+    "order": 81,
+    "action": {
+      "type": "view",
+      "path": "xg2010g/npu"
+    }
+  }
+}

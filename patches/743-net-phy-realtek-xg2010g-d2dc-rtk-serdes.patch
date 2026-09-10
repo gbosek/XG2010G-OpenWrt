@@ -17,7 +17,7 @@ firmware patch database.
  	int ret;
  
  	ret = request_firmware_direct(&fw, fw_name, dev);
-@@ -253,15 +253,40 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
+@@ -253,15 +253,41 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
  
  	patches = (struct rtlgen_hwpatch *)fw->data;
  	count = fw->size / sizeof(*patches);

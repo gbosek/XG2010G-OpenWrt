@@ -16,9 +16,8 @@ concurrency:
 env:
   SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
   # b6bd44a is the XG2010G UBI-FIT board point and contains the actual
-  # an7581-gemtek-xg2010g.dts.  d2dc130d alone predates that board file.
+  # an7581-gemtek-xg2010g.dts. d2dc130d alone predates that board file.
   SOURCE_COMMIT: b6bd44a7caf1b6979f1cb30433e33637b69e791e
-  CONFIG_REPO_RAW: https://raw.githubusercontent.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G/b6bd44a7caf1b6979f1cb30433e33637b69e791e/config.seed
 
 jobs:
   build-test2:
@@ -83,14 +82,16 @@ jobs:
       - name: Configure XG2010G Test-2
         run: |
           cd src
-          curl -fL "$CONFIG_REPO_RAW" -o .config
-          grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y$' .config
-          sed -i -e '/^CONFIG_VERSION_DIST=/d' -e '/^# CONFIG_VERSION_DIST is not set$/d' \
-                 -e '/^CONFIG_VERSION_NUMBER=/d' -e '/^# CONFIG_VERSION_NUMBER is not set$/d' .config
+          rm -f .config
+          echo 'CONFIG_TARGET_airoha=y' >> .config
+          echo 'CONFIG_TARGET_airoha_an7581=y' >> .config
+          echo 'CONFIG_TARGET_DEVICE_airoha_an7581_gemtek_xg2010g=y' >> .config
           echo 'CONFIG_VERSION_DIST="XG2010G-Test2"' >> .config
           echo 'CONFIG_VERSION_NUMBER="6.18.44-lan2-2p5g-rtl8261"' >> .config
           make defconfig
-          grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y$' .config
+          grep -q '^CONFIG_TARGET_airoha=y$' .config
+          grep -q '^CONFIG_TARGET_airoha_an7581=y$' .config
+          grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_gemtek_xg2010g=y$' .config
 
       - name: Download sources
         run: |

@@ -1,0 +1,112 @@
+From: XG2010G Test-3
+Subject: [PATCH] arm64: dts: airoha: restore XG2010G working UBI geometry
+
+The user's currently working XG2010G firmware uses the legacy board layout
+with BL2 at 0x00000000..0x00020000 and UBI starting at 0x00020000.  The
+Test-2 DTS instead split flash into bootloader/uenv/dsd/ubi/reserved_bmt and
+limited UBI to 0x00600000..0x1be00000.  Booting Test-2 against the existing
+flash therefore saw only 3520 good PEBs while rootfs_data reserved 3886 PEBs
+and UBI attach failed with -EINVAL.  That also prevents the UBI-backed NVMEM
+MAC cell from probing and leaves the Ethernet/switch devices deferred.
+
+For Test-3, restore the working two-partition geometry and the UBI volume
+nodes needed by NVMEM.  This patch is intended for initramfs validation first;
+no flash write is authorized by this change.
+
+--- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
++++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+@@ -18,74 +18,59 @@
+ &spi_nand {
+ 	partitions {
+ 		compatible = "fixed-partitions";
+ 		#address-cells = <1>;
+ 		#size-cells = <1>;
+ 
+-		bootloader@0 {
+-			label = "bootloader";
+-			reg = <0x00000000 0x00200000>;
++		bl2@0 {
++			label = "bl2";
++			reg = <0x00000000 0x00020000>;
+ 			read-only;
+ 		};
+ 
+-		uenv@200000 {
+-			label = "uenv";
+-			reg = <0x00200000 0x00200000>;
+-			read-only;
+-		};
+-
+-		dsd@400000 {
+-			label = "dsd";
+-			reg = <0x00400000 0x00200000>;
+-			read-only;
+-		};
+-
+-		ubi@600000 {
++		ubi@20000 {
+ 			label = "ubi";
+-			reg = <0x00600000 0x1b800000>;
++			/* size 0 means use the remainder of this 512 MiB NAND */
++			reg = <0x00020000 0x00000000>;
+ 			compatible = "linux,ubi";
+ 
+ 			volumes {
+-				ubi-volume-bosa {
++				ubi_bosa: ubi-volume-bosa {
+ 					volname = "bosa";
+ 				};
+ 
+ 				ubi-volume-factory {
+ 					volname = "ri";
+ 
+ 					nvmem-layout {
+ 						compatible = "fixed-layout";
+ 						#address-cells = <1>;
+ 						#size-cells = <1>;
+ 
+ 						macaddr_factory_3e: macaddr@3e {
+ 							compatible = "mac-base";
+ 							reg = <0x3e 0x6>;
+ 							#nvmem-cell-cells = <1>;
+ 						};
+ 					};
+ 				};
+ 
+ 				ubi_fit: ubi-volume-fit {
+ 					volname = "fit";
+ 				};
+ 
+ 				ubi-volume-fip {
+ 					volname = "fip";
+ 				};
++
++				ubi_env: ubi-volume-ubootenv {
++					volname = "ubootenv";
++				};
++
++				ubi_env2: ubi-volume-ubootenv2 {
++					volname = "ubootenv2";
++				};
+ 			};
+ 		};
+-
+-		reserved-bmt@1be00000 {
+-			label = "reserved_bmt";
+-			reg = <0x1be00000 0x04200000>;
+-			read-only;
+-		};
+ 	};
+ };
++
++&ubi_env {
++	nvmem-layout {
++		compatible = "u-boot,env-redundant-bool-layout";
++	};
++};
++
++&ubi_env2 {
++	nvmem-layout {
++		compatible = "u-boot,env-redundant-bool-layout";
++	};
++};

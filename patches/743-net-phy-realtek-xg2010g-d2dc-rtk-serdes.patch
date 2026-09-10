@@ -22,10 +22,12 @@ instead of adding a second carrier/retry state machine.
  	int ret;
  
  	ret = request_firmware_direct(&fw, fw_name, dev);
-@@ -253,15 +253,41 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
+@@ -253,15 +253,43 @@ static int rtl826x_phy_patch_db_init(struct phy_device *phydev, const char *fw_name)
  
  	patches = (struct rtlgen_hwpatch *)fw->data;
  	count = fw->size / sizeof(*patches);
++	priv->patch_rtk_serdes =
++		device_property_read_bool(dev, "realtek,patch-rtk-serdes");
 +	extra_count = priv->patch_rtk_serdes ? 2 : 0;
 +	total_count = count + extra_count;
 +	if (total_count < count) {
@@ -95,12 +97,3 @@ instead of adding a second carrier/retry state machine.
  	schedule_delayed_work(&priv->sds_work,
  			      msecs_to_jiffies(RTL826X_SDS_POLL_MS));
  }
-@@ -3007,6 +3014,8 @@ static int rtl826x_probe(struct phy_device *phydev)
- 		return -ENOMEM;
- 
- 	priv->enable_pma_low_power = device_property_read_bool(dev, "realtek,enable-pma-low-power");
-+	priv->patch_rtk_serdes =
-+		device_property_read_bool(dev, "realtek,patch-rtk-serdes");
- 	priv->phydev = phydev;
- 	phydev->priv = priv;
- 

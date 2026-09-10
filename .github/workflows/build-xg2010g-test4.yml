@@ -1,0 +1,155 @@
+name: Build XG2010G Test-4 Ethernet+Switch+NVMEM
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-xg2010g-test4.yml'
+      - '.github/workflows/build-xg2010g-test3.yml'
+      - 'patches/**'
+      - 'packages/luci-app-xg2010g/**'
+  workflow_dispatch:
+
+concurrency:
+  group: xg2010g-test4-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+  SOURCE_COMMIT: b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+jobs:
+  build-test4:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+      - name: Clone baseline
+        run: |
+          git clone --filter=blob:none "$SOURCE_REPO" src
+          cd src && git checkout "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+      - name: Add LuCI and RTL8261 fixes
+        run: |
+          cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
+          cd src
+          cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
+          patch -p1 < ../patches/746-airoha-xg2010g-enable-rtl8261-serdes-tuning.patch
+      - name: Apply verified Test-3 UBI geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          python3 - "$DTS" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text(); a=s.index('&spi_nand {'); b=s.index('&pcie0',a)
+          r='''&spi_nand {
+          \tpartitions {
+          \t\tcompatible = "fixed-partitions";
+          \t\t#address-cells = <1>;
+          \t\t#size-cells = <1>;
+          \t\tbl2@0 { label = "bl2"; reg = <0x0 0x20000>; read-only; };
+          \t\tubi@20000 {
+          \t\t\tlabel = "ubi"; reg = <0x20000 0x0>; compatible = "linux,ubi";
+          \t\t\tvolumes {
+          \t\t\t\tubi-volume-factory { volname = "factory"; nvmem-layout { compatible = "fixed-layout"; #address-cells = <1>; #size-cells = <1>; macaddr_factory_3e: macaddr@3e { compatible = "mac-base"; reg = <0x3e 0x6>; #nvmem-cell-cells = <1>; }; pon_calibration: calibration@12000 { reg = <0x12000 0x200>; }; }; };
+          \t\t\t\tubi_fit: ubi-volume-fit { volname = "fit"; };
+          \t\t\t\tubi-volume-fip { volname = "fip"; };
+          \t\t\t\tubi_env: ubi-volume-ubootenv { volname = "ubootenv"; };
+          \t\t\t\tubi_env2: ubi-volume-ubootenv2 { volname = "ubootenv2"; };
+          \t\t\t};
+          \t\t};
+          \t};
+          };
+          &ubi_env { nvmem-layout { compatible = "u-boot,env-redundant-bool-layout"; }; };
+          &ubi_env2 { nvmem-layout { compatible = "u-boot,env-redundant-bool-layout"; }; };
+
+          '''
+          p.write_text(s[:a]+r+s[b:])
+          PY
+          grep -q 'ubi@20000' "$DTS"
+          ! grep -q 'ubi@600000' "$DTS"
+      - name: Apply LAN2 mapping and NVMEM diagnostic fix
+        run: |
+          cd src
+          patch -p1 < ../patches/745-airoha-xg2010g-fix-lan1-lan2-2p5g-map.patch
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          # Test-3 proves UBI attaches, but the UBI-backed MAC NVMEM provider is not
+          # available when Ethernet probes. Remove that hard dependency for Test-4
+          # so the Ethernet/switch stack can probe; userspace can set MAC later.
+          python3 - "$DTS" <<'PY'
+          import re,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text()
+          s=re.sub(r'\n\s*nvmem-cells\s*=\s*<[^;]+>;','',s)
+          s=re.sub(r'\n\s*nvmem-cell-names\s*=\s*"mac-address";','',s)
+          p.write_text(s)
+          PY
+          git diff --check
+          git diff -- "$DTS" | tee ../test4-dts.diff
+      - name: Install feeds and configure
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          rm -f .config
+          cat >> .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-xg2010g=y
+          CONFIG_PACKAGE_ethtool=y
+          CONFIG_PACKAGE_ubi-utils=y
+          CONFIG_PACKAGE_nftables-json=y
+          CONFIG_VERSION_DIST="XG2010G-Test4"
+          CONFIG_VERSION_NUMBER="6.18.44-eth-switch-nvmem"
+          EOF
+          make defconfig
+      - name: Download and preflight
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          make download -j$(nproc)
+          make -j1 V=s target/linux/prepare 2>&1 | tee ../kernel-preflight-test4.log
+          KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
+          grep -q 'patch_rtk_serdes' "$KDIR/drivers/net/phy/realtek/realtek.h"
+          grep -q '0x80aa' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+          grep -q '0x5078' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+      - name: Build Test-4
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          make -j2 world 2>&1 | tee ../build-test4.log
+      - name: Collect artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          cp build-test4.log kernel-preflight-test4.log test4-dts.diff out/ 2>/dev/null || true
+          find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
+          find src/build_dir -type f -name '*xg2010g*.dtb' -exec cp -v {} out/xg2010g-test4.dtb \; -quit 2>/dev/null || true
+          if [ -f out/xg2010g-test4.dtb ]; then dtc -I dtb -O dts out/xg2010g-test4.dtb > out/xg2010g-test4.decompiled.dts || true; fi
+          (cd out && sha256sum *.itb 2>/dev/null || true) > out/sha256sums.txt
+          cat > out/TEST4-TEST.txt <<'EOF'
+          INITRAMFS TEST ONLY. DO NOT SYSUPGRADE.
+          After boot collect:
+          cat /proc/mtd
+          ubinfo -a
+          ls -l /sys/class/net
+          dmesg | grep -Ei 'airoha|ethernet|switch|mdio|phy|pcs|nvmem|rtl|8261|8811|deferred'
+          for i in /sys/class/net/*; do echo ===$i===; ethtool ${i##*/} 2>/dev/null; done
+          EOF
+      - name: Upload Test-4 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xg2010g-test4-ethernet-switch-nvmem
+          path: out/
+          retention-days: 14

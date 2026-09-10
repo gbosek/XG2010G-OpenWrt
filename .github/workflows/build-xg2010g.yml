@@ -52,13 +52,14 @@ jobs:
         run: |
           cd src
           cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch \
-            target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+            target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
           cp ../patches/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch \
-            target/linux/airoha/patches-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
-          grep -q 'realtek,patch-rtk-serdes' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
-          grep -q '0x80aa' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
-          grep -q '0x5078' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
-          grep -q 'usleep_range(10000, 12000)' target/linux/airoha/patches-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
+            target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
+          grep -q 'realtek,patch-rtk-serdes' target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q '0x80aa' target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q '0x5078' target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q 'usleep_range(10000, 12000)' target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
+          echo 'Injected after generic 742 so hunks apply to the RTL826x files created/modified by 742.'
 
       - name: Install feeds
         run: |

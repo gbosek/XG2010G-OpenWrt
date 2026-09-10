@@ -1,0 +1,27 @@
+From: XG2010G Test-2
+Subject: [PATCH] arm64: dts: airoha: enable RTL8261 SerDes tuning on XG2010G
+
+The XG2010G uses RTL8261-family 10G PHYs at MDIO addresses 0x08 and 0x05.
+Enable the board-specific host-side SerDes tuning only for those PHY nodes.
+
+--- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
++++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+@@ -13,6 +13,18 @@
+ 	};
+ };
+ 
++&mdio {
++	ethernet-phy@8 {
++		reg = <0x8>;
++		realtek,patch-rtk-serdes;
++	};
++
++	ethernet-phy@5 {
++		reg = <0x5>;
++		realtek,patch-rtk-serdes;
++	};
++};
++
+ &spi_nand {
+ 	partitions {
+ 		compatible = "fixed-partitions";

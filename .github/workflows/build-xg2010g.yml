@@ -1,12 +1,6 @@
 name: Build XG2010G Test-1 Candidate
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - '.github/workflows/build-xg2010g.yml'
-      - 'source.lock'
-      - 'patches/**'
   workflow_dispatch:
 
 concurrency:
@@ -53,6 +47,11 @@ jobs:
           cd src
           cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch \
             target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          test -f ../patches/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch || {
+            echo 'Legacy Test-1 reapply patch is intentionally absent on the Test-2 branch.'
+            echo 'Use a historical Test-1 commit if this reference build is required.'
+            exit 1
+          }
           cp ../patches/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch \
             target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
           grep -q 'realtek,patch-rtk-serdes' target/linux/generic/pending-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch

@@ -54,15 +54,15 @@ jobs:
           grep -q 'reg = <0xf>;' target/linux/airoha/dts/an7581-nokia_xg-040g-md-common.dtsi
           grep -q 'phy-mode = "2500base-x";' target/linux/airoha/dts/an7581-nokia_xg-040g-md-common.dtsi
 
-      - name: Inject RTL8261 host-SerDes tuning after baseline reset workaround
+      - name: Inject minimal RTL8261 host-SerDes tuning after baseline 743
         run: |
           cd src
-          # The b6bd44a baseline already owns patch number 743. Apply only our
-          # minimal board-specific tuning as 744 so both patches have deterministic order.
           cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch \
             target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
           grep -q 'realtek,patch-rtk-serdes' target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
           grep -q 'rtl826x_sds_reset_work' target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
+          grep -q '0x80aa' target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
+          grep -q '0x5078' target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
           test ! -e target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
 
       - name: Apply XG2010G LAN2 2.5G board mapping
@@ -74,8 +74,16 @@ jobs:
           grep -A8 '&gdm4' "$DTS" | grep -q 'openwrt,netdev-name = "lan2";'
           grep -A8 '&gdm4' "$DTS" | grep -q 'phy-handle = <&en8811>;'
           grep -A8 '&gdm4' "$DTS" | grep -q 'phy-mode = "2500base-x";'
+
+      - name: Enable RTL8261 tuning only on XG2010G 10G PHYs
+        run: |
+          cd src
+          patch -p1 < ../patches/746-airoha-xg2010g-enable-rtl8261-serdes-tuning.patch
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          grep -A4 'ethernet-phy@8' "$DTS" | grep -q 'realtek,patch-rtk-serdes;'
+          grep -A4 'ethernet-phy@5' "$DTS" | grep -q 'realtek,patch-rtk-serdes;'
           git diff --check
-          git diff -- target/linux/airoha/dts/an7581-gemtek-xg2010g.dts | tee ../test2-dts.diff
+          git diff -- "$DTS" | tee ../test2-dts.diff
 
       - name: Install feeds
         run: |
@@ -102,6 +110,18 @@ jobs:
           cd src
           make download -j$(nproc)
 
+      - name: Preflight Linux 6.18 patch stack
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          make -j1 V=s target/linux/prepare 2>&1 | tee ../kernel-preflight-test2.log
+          test -d build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
+          KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
+          grep -q 'patch_rtk_serdes' "$KDIR/drivers/net/phy/realtek/realtek.h"
+          grep -q '0x80aa' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+          grep -q '0x5078' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+
       - name: Build Test-2 firmware
         shell: bash
         run: |
@@ -119,6 +139,7 @@ jobs:
         run: |
           mkdir -p out
           cp build-test2.log out/ 2>/dev/null || true
+          cp kernel-preflight-test2.log out/ 2>/dev/null || true
           cp kernel-error-test2.log out/ 2>/dev/null || true
           cp source-baseline.txt test2-dts.diff out/ 2>/dev/null || true
           find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
@@ -126,7 +147,7 @@ jobs:
           find src/build_dir -type f \( -name '*gemtek*xg2010g*.dtb' -o -name '*xg2010g*.dtb' \) -exec cp -v {} out/xg2010g-test2.dtb \; -quit 2>/dev/null || true
           if [ -f out/xg2010g-test2.dtb ]; then
             dtc -I dtb -O dts out/xg2010g-test2.dtb > out/xg2010g-test2.decompiled.dts || true
-            grep -n -E 'lan1|lan2|2500base-x|ethernet-phy@f|patch-rtk-serdes|usxgmii' out/xg2010g-test2.decompiled.dts > out/xg2010g-test2.dt-check.txt || true
+            grep -n -E 'lan1|lan2|2500base-x|ethernet-phy@f|ethernet-phy@8|ethernet-phy@5|patch-rtk-serdes|usxgmii' out/xg2010g-test2.decompiled.dts > out/xg2010g-test2.dt-check.txt || true
           fi
           if [ -f out/realtek-test2.ko ]; then
             modinfo out/realtek-test2.ko | tee out/realtek-test2.modinfo.txt || true

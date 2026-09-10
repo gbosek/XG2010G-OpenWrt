@@ -1,5 +1,5 @@
 From: XG2010G Test-3
-Subject: [PATCH] arm64: dts: airoha: restore XG2010G working UBI geometry
+Subject: [PATCH] arm64: dts: airoha: match working XG2010G UBI layout
 
 This layout is taken from the user's currently working 14,098,704-byte
 XG2010G sysupgrade ITB DTB, not inferred from the Test-2 tree.
@@ -10,16 +10,13 @@ Observed working DT layout:
 - UBI volumes declared by DT: factory, fip, ubootenv, ubootenv2, fit
 - PON calibration: factory offset 0x12000 length 0x200
 
-Keep the baseline MAC nvmem cell for now because the newer common DTSI
-references it; add the working PON calibration cell alongside it. This is
+Keep the baseline MAC nvmem cell because the newer common DTSI references it;
+add the working PON calibration cell alongside it. This remains
 initramfs-validation-only and does not authorize flash writes.
 
 --- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
 +++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
-@@ -21,36 +21,20 @@
- 		#address-cells = <1>;
- 		#size-cells = <1>;
- 
+@@ -24,33 +24,17 @@
 -		bootloader@0 {
 -			label = "bootloader";
 -			reg = <0x00000000 0x00200000>;
@@ -56,11 +53,7 @@ initramfs-validation-only and does not authorize flash writes.
  				ubi-volume-factory {
 -					volname = "ri";
 +					volname = "factory";
- 
- 					nvmem-layout {
- 						compatible = "fixed-layout";
-@@ -62,6 +46,10 @@
- 							reg = <0x3e 0x6>;
+@@ -63,6 +47,10 @@
  							#nvmem-cell-cells = <1>;
  						};
 +
@@ -69,8 +62,7 @@ initramfs-validation-only and does not authorize flash writes.
 +						};
  					};
  				};
- 
-@@ -72,13 +60,27 @@
+@@ -73,6 +61,14 @@
  				ubi-volume-fip {
  					volname = "fip";
  				};
@@ -83,13 +75,13 @@ initramfs-validation-only and does not authorize flash writes.
 +					volname = "ubootenv2";
 +				};
  			};
--		};
--
+ 		};
+@@ -80,10 +76,18 @@
 -		reserved-bmt@1be00000 {
 -			label = "reserved_bmt";
 -			reg = <0x1be00000 0x04200000>;
 -			read-only;
- 		};
+-		};
  	};
  };
 +
@@ -104,3 +96,5 @@ initramfs-validation-only and does not authorize flash writes.
 +		compatible = "u-boot,env-redundant-bool-layout";
 +	};
 +};
+ 
+ &pcie0 { status = "disabled"; };

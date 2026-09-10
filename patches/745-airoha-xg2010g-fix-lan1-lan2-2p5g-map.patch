@@ -1,0 +1,26 @@
+--- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
++++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+@@ -92,3 +92,24 @@
+ &usb0 { status = "disabled"; };
+ &usb1 { status = "disabled"; };
+ &mmc0 { status = "disabled"; };
++
++/*
++ * XG2010G physical Ethernet layout differs from the Nokia common DTSI.
++ * The inherited Nokia definition exposes the EN8811H/EN8811 2.5G PHY
++ * attached to GDM4 as "lan1", while XG2010G's physical 2.5G jack is LAN2.
++ *
++ * Keep the internal 1G switch port as LAN1 and expose GDM4 + EN8811H as
++ * LAN2.  The PHY itself remains in 2500BASE-X host mode; copper-side
++ * autonegotiation is expected to provide both 2.5G and 1G operation.
++ */
++&gsw_port2 {
++	label = "lan1";
++};
++
++&gdm4 {
++	status = "okay";
++	openwrt,netdev-name = "lan2";
++	phy-handle = <&en8811>;
++	phy-mode = "2500base-x";
++};

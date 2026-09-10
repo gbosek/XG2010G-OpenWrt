@@ -1,24 +1,22 @@
 From: XG2010G Test-3
 Subject: [PATCH] arm64: dts: airoha: restore XG2010G working UBI geometry
 
-The user's currently working XG2010G firmware uses the legacy board layout
-with BL2 at 0x00000000..0x00020000 and UBI starting at 0x00020000.  The
-Test-2 DTS instead split flash into bootloader/uenv/dsd/ubi/reserved_bmt and
-limited UBI to 0x00600000..0x1be00000.  Booting Test-2 against the existing
-flash therefore saw only 3520 good PEBs while rootfs_data reserved 3886 PEBs
-and UBI attach failed with -EINVAL.  That also prevents the UBI-backed NVMEM
-MAC cell from probing and leaves the Ethernet/switch devices deferred.
+This layout is taken from the user's currently working 14,098,704-byte
+XG2010G sysupgrade ITB DTB, not inferred from the Test-2 tree.
 
-For Test-3, restore the working two-partition geometry and the UBI volume
-nodes needed by NVMEM.  This patch is intended for initramfs validation first;
-no flash write is authorized by this change.
+Observed working DT layout:
+- bl2: reg <0x00000000 0x00020000>, read-only
+- ubi: reg <0x00020000 0x00000000>, linux,ubi
+- UBI volumes declared by DT: factory, fip, ubootenv, ubootenv2, fit
+- PON calibration: factory offset 0x12000 length 0x200
+
+Keep the baseline MAC nvmem cell for now because the newer common DTSI
+references it; add the working PON calibration cell alongside it. This is
+initramfs-validation-only and does not authorize flash writes.
 
 --- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
 +++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
-@@ -18,74 +18,64 @@
- &spi_nand {
- 	partitions {
- 		compatible = "fixed-partitions";
+@@ -21,36 +21,20 @@
  		#address-cells = <1>;
  		#size-cells = <1>;
  
@@ -47,36 +45,32 @@ no flash write is authorized by this change.
 +		ubi@20000 {
  			label = "ubi";
 -			reg = <0x00600000 0x1b800000>;
-+			/* size 0 means use the remainder of this 512 MiB NAND */
 +			reg = <0x00020000 0x00000000>;
  			compatible = "linux,ubi";
  
  			volumes {
 -				ubi-volume-bosa {
-+				ubi_bosa: ubi-volume-bosa {
- 					volname = "bosa";
- 				};
- 
+-					volname = "bosa";
+-				};
+-
  				ubi-volume-factory {
- 					volname = "ri";
+-					volname = "ri";
++					volname = "factory";
  
  					nvmem-layout {
  						compatible = "fixed-layout";
- 						#address-cells = <1>;
- 						#size-cells = <1>;
- 
- 						macaddr_factory_3e: macaddr@3e {
- 							compatible = "mac-base";
+@@ -62,6 +46,10 @@
  							reg = <0x3e 0x6>;
  							#nvmem-cell-cells = <1>;
  						};
++
++						pon_calibration: calibration@12000 {
++							reg = <0x12000 0x200>;
++						};
  					};
  				};
  
- 				ubi_fit: ubi-volume-fit {
- 					volname = "fit";
- 				};
- 
+@@ -72,13 +60,27 @@
  				ubi-volume-fip {
  					volname = "fip";
  				};
@@ -89,13 +83,13 @@ no flash write is authorized by this change.
 +					volname = "ubootenv2";
 +				};
  			};
- 		};
+-		};
 -
 -		reserved-bmt@1be00000 {
 -			label = "reserved_bmt";
 -			reg = <0x1be00000 0x04200000>;
 -			read-only;
--		};
+ 		};
  	};
  };
 +

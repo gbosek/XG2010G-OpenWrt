@@ -1,0 +1,235 @@
+name: Build XG2010G Test-4B Base-Firmware LAN+DSD+LuCI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-xg2010g-test4b.yml'
+      - 'patches/**'
+      - 'packages/luci-app-xg2010g/**'
+  workflow_dispatch:
+
+concurrency:
+  group: xg2010g-test4b-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+  SOURCE_COMMIT: b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+jobs:
+  build-test4b:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+
+      - name: Clone known XG2010G 6.18.44 baseline
+        run: |
+          git clone --filter=blob:none "$SOURCE_REPO" src
+          cd src
+          git checkout "$SOURCE_COMMIT"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          printf 'source_commit=%s\n' "$(git rev-parse HEAD)" > ../source-baseline-test4b.txt
+
+      - name: Add XG2010G LuCI including DSD helper
+        run: |
+          cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
+          chmod +x src/package/luci-app-xg2010g/root/usr/libexec/xg2010g-status
+          chmod +x src/package/luci-app-xg2010g/root/usr/libexec/xg2010g-dsd
+          test -f src/package/luci-app-xg2010g/htdocs/luci-static/resources/view/xg2010g/dsd.js
+
+      - name: Apply RTL8261 host-SerDes fix
+        run: |
+          cd src
+          cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
+          patch -p1 < ../patches/746-airoha-xg2010g-enable-rtl8261-serdes-tuning.patch
+
+      - name: Restore uploaded base-firmware storage geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          python3 - "$DTS" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text(); a=s.index('&spi_nand {'); b=s.index('&pcie0',a)
+          r='''&spi_nand {
+          \tpartitions {
+          \t\tcompatible = "fixed-partitions";
+          \t\t#address-cells = <1>;
+          \t\t#size-cells = <1>;
+          \t\tbl2@0 { label = "bl2"; reg = <0x00000000 0x00020000>; read-only; };
+          \t\tubi@20000 {
+          \t\t\tlabel = "ubi"; reg = <0x00020000 0x00000000>; compatible = "linux,ubi";
+          \t\t\tvolumes {
+          \t\t\t\tubi-volume-factory { volname = "factory"; nvmem-layout { compatible = "fixed-layout"; #address-cells = <1>; #size-cells = <1>; macaddr_factory_3e: macaddr@3e { compatible = "mac-base"; reg = <0x3e 0x6>; #nvmem-cell-cells = <1>; }; pon_calibration: calibration@12000 { reg = <0x12000 0x200>; }; }; };
+          \t\t\t\tubi_fit: ubi-volume-fit { volname = "fit"; };
+          \t\t\t\tubi-volume-fip { volname = "fip"; };
+          \t\t\t\tubi_env: ubi-volume-ubootenv { volname = "ubootenv"; };
+          \t\t\t\tubi_env2: ubi-volume-ubootenv2 { volname = "ubootenv2"; };
+          \t\t\t};
+          \t\t};
+          \t};
+          };
+          &ubi_env { nvmem-layout { compatible = "u-boot,env-redundant-bool-layout"; }; };
+          &ubi_env2 { nvmem-layout { compatible = "u-boot,env-redundant-bool-layout"; }; };
+
+          '''
+          p.write_text(s[:a]+r+s[b:])
+          PY
+
+      - name: Restore uploaded base-firmware Ethernet topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          python3 - "$DTS" <<'PY'
+          import sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); s=p.read_text()
+          s=s.replace('ethernet-phy@8 {', 'rtl8261_8: ethernet-phy@8 {', 1)
+          s=s.replace('ethernet-phy@5 {', 'rtl8261_5: ethernet-phy@5 {', 1)
+          s += r'''
+
+          /* Test-4B: topology reconstructed from the user's working base firmware DTB. */
+          &eth { status = "okay"; };
+          &gdm1 { status = "okay"; };
+          &gdm2 { status = "okay"; };
+
+          &usb_pcs { status = "okay"; };
+          &pcie_pcs { status = "okay"; };
+          &eth_pcs { status = "okay"; };
+
+          &gsw_port1 { status = "disabled"; };
+          &gsw_port2 { status = "disabled"; };
+          &gsw_port3 { status = "disabled"; };
+          &gsw_port4 { status = "okay"; label = "lan1"; };
+          &gsw_phy2 { status = "disabled"; };
+          &gsw_phy3 { status = "disabled"; };
+          &gsw_phy4 { status = "okay"; };
+
+          &gdm4 {
+            status = "okay";
+            openwrt,netdev-name = "lan4";
+            phy-handle = <&rtl8261_5>;
+            phy-mode = "usxgmii";
+            pcs-handle = <&eth_pcs>;
+            /delete-property/ nvmem-cells;
+            /delete-property/ nvmem-cell-names;
+          };
+
+          &eth {
+            gdm3: ethernet@3 {
+              compatible = "airoha,eth-mac";
+              reg = <3>;
+              status = "okay";
+              #address-cells = <1>;
+              #size-cells = <0>;
+
+              ethernet-port@4 {
+                reg = <4>;
+                openwrt,netdev-name = "lan2";
+                phy-handle = <&en8811>;
+                phy-mode = "2500base-x";
+                pcs-handle = <&usb_pcs>;
+              };
+
+              ethernet-port@5 {
+                reg = <5>;
+                openwrt,netdev-name = "lan3";
+                phy-handle = <&rtl8261_8>;
+                phy-mode = "usxgmii";
+                pcs-handle = <&pcie_pcs 1>;
+              };
+            };
+          };
+          '''
+          p.write_text(s)
+          PY
+          grep -q 'openwrt,netdev-name = "lan2"' "$DTS"
+          grep -q 'openwrt,netdev-name = "lan3"' "$DTS"
+          grep -q 'openwrt,netdev-name = "lan4"' "$DTS"
+          grep -q 'pcs-handle = <&usb_pcs>' "$DTS"
+          grep -q 'pcs-handle = <&pcie_pcs 1>' "$DTS"
+          grep -q 'pcs-handle = <&eth_pcs>' "$DTS"
+          git diff --check
+          git diff -- "$DTS" | tee ../test4b-dts.diff
+
+      - name: Install feeds
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure Test-4B
+        run: |
+          cd src
+          rm -f .config
+          cat >> .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-xg2010g=y
+          CONFIG_PACKAGE_ethtool=y
+          CONFIG_PACKAGE_ubi-utils=y
+          CONFIG_PACKAGE_nftables-json=y
+          CONFIG_VERSION_DIST="XG2010G-Test4B"
+          CONFIG_VERSION_NUMBER="6.18.44-basefw-lan-dsd-luci"
+          EOF
+          make defconfig
+
+      - name: Download sources and preflight
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          make download -j$(nproc)
+          make -j1 V=s target/linux/prepare 2>&1 | tee ../kernel-preflight-test4b.log
+          KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
+          grep -q 'patch_rtk_serdes' "$KDIR/drivers/net/phy/realtek/realtek.h"
+          grep -q '0x80aa' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+          grep -q '0x5078' "$KDIR/drivers/net/phy/realtek/realtek_main.c"
+
+      - name: Build Test-4B
+        shell: bash
+        run: |
+          set -o pipefail
+          cd src
+          make -j2 world 2>&1 | tee ../build-test4b.log
+
+      - name: Collect Test-4B artifacts
+        if: always()
+        run: |
+          mkdir -p out
+          cp build-test4b.log kernel-preflight-test4b.log source-baseline-test4b.txt test4b-dts.diff out/ 2>/dev/null || true
+          find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
+          find src/bin -type f -name '*luci-app-xg2010g*.ipk' -exec cp -v {} out/ \; 2>/dev/null || true
+          find src/build_dir -type f -name '*xg2010g*.dtb' -exec cp -v {} out/xg2010g-test4b.dtb \; -quit 2>/dev/null || true
+          if [ -f out/xg2010g-test4b.dtb ]; then
+            dtc -I dtb -O dts out/xg2010g-test4b.dtb > out/xg2010g-test4b.decompiled.dts || true
+            grep -n -E 'ethernet@3|ethernet-port@4|ethernet-port@5|lan1|lan2|lan3|lan4|2500base-x|usxgmii|ethernet-phy@8|ethernet-phy@5|ubi@20000|calibration@12000' out/xg2010g-test4b.decompiled.dts > out/test4b-dt-check.txt || true
+          fi
+          (cd out && sha256sum *.itb *.ipk 2>/dev/null || true) > out/sha256sums.txt
+          cat > out/TEST4B-SAFETY.txt <<'EOF'
+          TEST-4B IS INITRAMFS-VALIDATION-ONLY.
+          Do NOT sysupgrade yet.
+          Validate UBI attach, /sys/class/net, Ethernet/switch probe, LAN2 1G+2.5G,
+          LAN3/LAN4 10G carrier+traffic, PON, NPU/PPE/QDMA and LuCI pages first.
+          DSD LuCI is backup/check/extract only; NAND write is intentionally disabled.
+          EOF
+
+      - name: Upload Test-4B artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xg2010g-test4b-basefw-lan-dsd-luci
+          path: out/
+          retention-days: 14

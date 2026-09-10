@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/build-xg2010g.yml'
       - 'source.lock'
+      - 'patches/**'
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +17,6 @@ env:
   SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
   SOURCE_COMMIT: d2dc130d7f8341741df04eaaf5fd4c74dcc447d7
   CONFIG_REPO_RAW: https://raw.githubusercontent.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G/015b95c23e4475ba6a4626ab38115b2690dbd3f1/config.seed
-  RTL_FIX_REPO_RAW: https://raw.githubusercontent.com/naoki66/ImmortalWrt-for-Gemtek-XR1710G/b7c3ce5ecc6f58fb3e285bc2b7b67d9735ab33e5/target/linux/airoha/patches-6.18
 
 jobs:
   build-reference:
@@ -46,18 +46,19 @@ jobs:
             grep -R -q '6\.18\.44' include target/linux
           test -f target/linux/generic/pending-6.18/742-net-phy-realtek-add-5G-and-10G-PHY-support.patch
           grep -q 'rtl8261be_match_phy_device' target/linux/generic/pending-6.18/742-net-phy-realtek-add-5G-and-10G-PHY-support.patch
+          grep -q 'struct rtl826x_priv' target/linux/generic/pending-6.18/742-net-phy-realtek-add-5G-and-10G-PHY-support.patch
 
-      - name: Inject RTL8261 Test-1 fixes 743 and 744
+      - name: Inject d2dc130d-compatible RTL8261 Test-1 fixes
         run: |
           cd src
-          curl -fL "$RTL_FIX_REPO_RAW/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch" \
-            -o target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
-          curl -fL "$RTL_FIX_REPO_RAW/744-net-phy-realtek-reapply-RTK-SerDes-after-aneg.patch" \
-            -o target/linux/airoha/patches-6.18/744-net-phy-realtek-reapply-RTK-SerDes-after-aneg.patch
-          grep -q 'realtek,patch-rtk-serdes' target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
-          grep -q '0x80aa' target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
-          grep -q '0x5078' target/linux/airoha/patches-6.18/743-net-phy-realtek-restore-optional-RTK-SerDes-patch.patch
-          grep -q '10000, 12000' target/linux/airoha/patches-6.18/744-net-phy-realtek-reapply-RTK-SerDes-after-aneg.patch
+          cp ../patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch \
+            target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          cp ../patches/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch \
+            target/linux/airoha/patches-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
+          grep -q 'realtek,patch-rtk-serdes' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q '0x80aa' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q '0x5078' target/linux/airoha/patches-6.18/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch
+          grep -q 'usleep_range(10000, 12000)' target/linux/airoha/patches-6.18/744-net-phy-realtek-xg2010g-d2dc-reapply-serdes-after-aneg.patch
 
       - name: Install feeds
         run: |

@@ -68,9 +68,6 @@ jobs:
       - name: Configure XG2010G matching-baseline build
         run: |
           cd src
-          # config.seed did not exist yet at d2dc130d; use a pinned later XG2010G
-          # config only to select the same target/device and packages. Kernel/source
-          # remain pinned to d2dc130d so realtek.ko is built from the matching tree.
           curl -fL "$CONFIG_REPO_RAW" -o .config
           grep -q '^CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y$' .config
           sed -i -e '/^CONFIG_VERSION_DIST=/d' -e '/^# CONFIG_VERSION_DIST is not set$/d' \
@@ -85,15 +82,22 @@ jobs:
           make download -j$(nproc)
 
       - name: Build matching-baseline firmware and RTL8261 module
+        shell: bash
         run: |
+          set -o pipefail
           cd src
-          make -j2 world 2>&1 | tee ../build.log
+          if ! make -j2 world 2>&1 | tee ../build.log; then
+            echo 'Parallel build failed; rerunning target/linux serially with V=s for diagnosis.' | tee ../kernel-error.log
+            make -j1 V=s target/linux/compile 2>&1 | tee -a ../kernel-error.log
+            exit 1
+          fi
 
       - name: Collect candidate artifacts and ABI diagnostics
         if: always()
         run: |
           mkdir -p out
           cp build.log out/ 2>/dev/null || true
+          cp kernel-error.log out/ 2>/dev/null || true
           cp source-baseline.txt out/ 2>/dev/null || true
           find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
           find src/build_dir -type f -name 'realtek.ko' -exec cp -v {} out/realtek-test1.ko \; -quit 2>/dev/null || true

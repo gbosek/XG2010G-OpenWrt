@@ -53,15 +53,102 @@ jobs:
             target/linux/generic/pending-6.18/744-net-phy-realtek-xg2010g-serdes-tuning.patch
           patch -p1 < ../patches/746-airoha-xg2010g-enable-rtl8261-serdes-tuning.patch
 
-      - name: Restore working XG2010G UBI geometry
+      - name: Restore working XG2010G UBI geometry deterministically
+        shell: bash
         run: |
+          set -euo pipefail
           cd src
-          patch -p1 < ../patches/747-airoha-xg2010g-restore-working-ubi-layout.patch
           DTS=target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          cp "$DTS" ../test3-dts.before
+          python3 - "$DTS" <<'PY'
+          import re, sys
+          from pathlib import Path
+          p = Path(sys.argv[1])
+          s = p.read_text()
+          start = s.index('&spi_nand {')
+          end = s.index('&pcie0', start)
+          replacement = '''&spi_nand {
+          \tpartitions {
+          \t\tcompatible = "fixed-partitions";
+          \t\t#address-cells = <1>;
+          \t\t#size-cells = <1>;
+
+          \t\tbl2@0 {
+          \t\t\tlabel = "bl2";
+          \t\t\treg = <0x00000000 0x00020000>;
+          \t\t\tread-only;
+          \t\t};
+
+          \t\tubi@20000 {
+          \t\t\tlabel = "ubi";
+          \t\t\treg = <0x00020000 0x00000000>;
+          \t\t\tcompatible = "linux,ubi";
+
+          \t\t\tvolumes {
+          \t\t\t\tubi-volume-factory {
+          \t\t\t\t\tvolname = "factory";
+
+          \t\t\t\t\tnvmem-layout {
+          \t\t\t\t\t\tcompatible = "fixed-layout";
+          \t\t\t\t\t\t#address-cells = <1>;
+          \t\t\t\t\t\t#size-cells = <1>;
+
+          \t\t\t\t\t\tmacaddr_factory_3e: macaddr@3e {
+          \t\t\t\t\t\t\tcompatible = "mac-base";
+          \t\t\t\t\t\t\treg = <0x3e 0x6>;
+          \t\t\t\t\t\t\t#nvmem-cell-cells = <1>;
+          \t\t\t\t\t\t};
+
+          \t\t\t\t\t\tpon_calibration: calibration@12000 {
+          \t\t\t\t\t\t\treg = <0x12000 0x200>;
+          \t\t\t\t\t\t};
+          \t\t\t\t\t};
+          \t\t\t\t};
+
+          \t\t\t\tubi_fit: ubi-volume-fit {
+          \t\t\t\t\tvolname = "fit";
+          \t\t\t\t};
+
+          \t\t\t\tubi-volume-fip {
+          \t\t\t\t\tvolname = "fip";
+          \t\t\t\t};
+
+          \t\t\t\tubi_env: ubi-volume-ubootenv {
+          \t\t\t\t\tvolname = "ubootenv";
+          \t\t\t\t};
+
+          \t\t\t\tubi_env2: ubi-volume-ubootenv2 {
+          \t\t\t\t\tvolname = "ubootenv2";
+          \t\t\t\t};
+          \t\t\t};
+          \t\t};
+          \t};
+          };
+
+          &ubi_env {
+          \tnvmem-layout {
+          \t\tcompatible = "u-boot,env-redundant-bool-layout";
+          \t};
+          };
+
+          &ubi_env2 {
+          \tnvmem-layout {
+          \t\tcompatible = "u-boot,env-redundant-bool-layout";
+          \t};
+          };
+
+          '''
+          p.write_text(s[:start] + replacement + s[end:])
+          PY
           grep -A4 'bl2@0' "$DTS" | grep -q 'reg = <0x00000000 0x00020000>;'
           grep -A5 'ubi@20000' "$DTS" | grep -q 'reg = <0x00020000 0x00000000>;'
+          grep -q 'volname = "factory";' "$DTS"
+          grep -q 'reg = <0x12000 0x200>;' "$DTS"
           grep -q 'ubi-volume-ubootenv' "$DTS"
           grep -q 'ubi-volume-ubootenv2' "$DTS"
+          ! grep -q 'reserved-bmt@1be00000' "$DTS"
+          ! grep -q 'ubi@600000' "$DTS"
+          git diff --check
 
       - name: Apply LAN2 2.5G mapping
         run: |

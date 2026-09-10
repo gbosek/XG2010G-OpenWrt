@@ -15,7 +15,7 @@ no flash write is authorized by this change.
 
 --- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
 +++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
-@@ -18,74 +18,59 @@
+@@ -18,74 +18,64 @@
  &spi_nand {
  	partitions {
  		compatible = "fixed-partitions";

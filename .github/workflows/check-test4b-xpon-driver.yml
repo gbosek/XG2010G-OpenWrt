@@ -136,56 +136,21 @@ jobs:
                   raise SystemExit(f"{path}: expected exactly one {label}, found {count}")
               path.write_text(text.replace(old, new, 1))
 
-          # The upstream 6.18 port makes the module buildable by disabling the
-          # original vendor control paths and replacing them with stubs. Keep
-          # the Linux-6.18 API/Kbuild compatibility fixes, but restore the real
-          # handlers so CI exposes every remaining functional porting error.
           replace_once(fdet, "#if 0\nint fdet_cmd_proc", "int fdet_cmd_proc", "fdet #if 0")
-          replace_once(fdet,
-              "#endif\n\nint fdet_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
-              "", "fdet stub")
+          replace_once(fdet, "#endif\n\nint fdet_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "fdet stub")
 
           replace_once(gpon, "#if 0\nint gpon_10g_cmd_proc", "int gpon_10g_cmd_proc", "GPON #if 0")
-          gpon_tail = """#endif
-
-int gpon_10g_cmd_proc(uint cmd, ulong arg)
-{
-\treturn -EOPNOTSUPP;
-}
-
-int gpon_cmd_proc(uint cmd, ulong arg)
-{
-\treturn -EOPNOTSUPP;
-}
-
-int rdkb_10g_cmd_proc(uint cmd, ulong arg)
-{
-\treturn -EOPNOTSUPP;
-}
-"""
+          gpon_tail = "#endif\n\nint gpon_10g_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n\nint gpon_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n\nint rdkb_10g_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n"
           replace_once(gpon, gpon_tail, "", "GPON ioctl stubs")
 
           replace_once(ifc, "#if 0\nint if_cmd_proc", "int if_cmd_proc", "interface #if 0")
-          replace_once(ifc,
-              "#endif\n\nint if_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
-              "", "interface stub")
+          replace_once(ifc, "#endif\n\nint if_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "interface stub")
 
           replace_once(phy, "#if 0\nint phy_cmd_proc", "int phy_cmd_proc", "PHY #if 0")
-          replace_once(phy,
-              "#endif\n\nint phy_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
-              "", "PHY stub")
+          replace_once(phy, "#endif\n\nint phy_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "PHY stub")
 
           replace_once(mci, "#if 0\nlong pon_mci_ioctl", "long pon_mci_ioctl", "MCI #if 0")
-          mci_stub = """#endif
-
-long pon_mci_ioctl(struct file *filp, uint cmd, ulong arg)
-{
-\tif (_IOC_TYPE(cmd) == EPON_MAGIC)
-\t\treturn epon_cmd_proc(cmd, arg);
-
-\treturn -ENOTTY;
-}
-"""
+          mci_stub = "#endif\n\nlong pon_mci_ioctl(struct file *filp, uint cmd, ulong arg)\n{\n\tif (_IOC_TYPE(cmd) == EPON_MAGIC)\n\t\treturn epon_cmd_proc(cmd, arg);\n\n\treturn -ENOTTY;\n}\n"
           replace_once(mci, mci_stub, "", "MCI EPON-only stub")
 
           checks = {

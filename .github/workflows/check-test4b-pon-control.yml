@@ -34,12 +34,12 @@ jobs:
         run: |
           set -euo pipefail
           d=packages/basefw-parity/archive-v2
-          if [ ! -s "$d/payload-v2.tar.xz.b64.part10" ]; then
-            echo 'Payload upload is not complete yet; hash verification stays gated until part10 exists.'
+          if [ ! -s "$d/payload-v2.tar.xz.b64.part33" ]; then
+            echo 'Payload upload is not complete yet; hash verification stays gated until part33 exists.'
             exit 0
           fi
           count=$(find "$d" -maxdepth 1 -type f -name 'payload-v2.tar.xz.b64.part*' | wc -l)
-          [ "$count" -eq 11 ] || { echo "ERROR: expected 11 payload chunks, found $count"; exit 1; }
+          [ "$count" -eq 34 ] || { echo "ERROR: expected 34 payload chunks, found $count"; exit 1; }
           cat "$d"/payload-v2.tar.xz.b64.part* | base64 -d > /tmp/xg2010g-parity.tar.xz
           echo '5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4  /tmp/xg2010g-parity.tar.xz' | sha256sum -c -
           mkdir /tmp/xg2010g-parity
@@ -99,8 +99,8 @@ jobs:
         run: |
           set -euo pipefail
           d=packages/basefw-parity/archive-v2
-          if [ ! -s "$d/payload-v2.tar.xz.b64.part10" ]; then
-            echo 'Payload incomplete; package compilation is gated until part10 exists.'
+          if [ ! -s "$d/payload-v2.tar.xz.b64.part33" ]; then
+            echo 'Payload incomplete; package compilation is gated until part33 exists.'
             exit 0
           fi
           cd src

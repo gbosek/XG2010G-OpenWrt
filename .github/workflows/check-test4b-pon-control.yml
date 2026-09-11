@@ -91,7 +91,7 @@ jobs:
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
 
-      - name: Prepare OpenWrt host tools and toolchain
+      - name: Prepare OpenWrt host tools, toolchain and Airoha target tree
         shell: bash
         run: |
           set -euo pipefail
@@ -100,7 +100,12 @@ jobs:
           make -j2 toolchain/install V=s
           test -x staging_dir/host/bin/openssl
           test -x staging_dir/host/bin/libdeflate-gzip
-          echo 'PASS: OpenWrt host tools and target toolchain are ready.'
+          # Package compilation pulls in package/kernel/linux. Prepare the target first so
+          # OpenWrt copies its out-of-tree XG2010G DTS into the Linux source tree.
+          make -j1 target/linux/prepare V=s
+          KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
+          test -f "$KDIR/arch/arm64/boot/dts/airoha/an7581-gemtek-xg2010g.dts"
+          echo 'PASS: OpenWrt host tools, target toolchain and XG2010G DTS tree are ready.'
 
       - name: Compile extracted PON packages and LuCI
         shell: bash

@@ -1,0 +1,14 @@
+XG2010G base-firmware parity payload extracted byte-for-byte from the user's uploaded working firmware.
+
+usr/sbin/ponctl 330139 sha256 3bd8b7e264f6738de7eff66afa44068a9684fb0dd559b950ad702a2e59f7b01c
+usr/sbin/airoha-oamd 395699 sha256 aee701662d3c25f98c37eb91c600836e1cff1263f0664572eb83d3060f392429
+usr/sbin/airoha-omcid 526771 sha256 6e361fc1be99f64185b62b7e93fde1462d392309774a36af59dd4b1248850b63
+lib/firmware/rtl8261n.bin 14370 sha256 ae1963b2a84a17eaa2fb9052591bdb5152838feda045d7313f45a8608b918533
+lib/firmware/rtl8264b.bin 21700 sha256 7a0bcf605739d6f780e0799bbea0c73acf56c9a4cbba015da5d27589bf4352ca
+
+Combined payload archive: xg2010g-parity-v2.tar.xz
+uncompressed source tree contains the above binaries plus the original PON init/config/LuCI helper assets.
+archive sha256 5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4
+archive size 302880 bytes; base64 size 403840 bytes.
+
+The CI/build must verify these sizes/hashes before packaging. Do not weaken the parity gate to make a build pass.

@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xg2010g-basefw-pon
 PKG_VERSION:=1.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 PKG_LICENSE:=Proprietary
 
 # The extracted payload is stored in the outer repository next to src/ during
@@ -51,10 +51,10 @@ endef
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	# The complete archive is 11 ordered chunks: part00 ... part10.
+	# The complete archive is 34 ordered chunks: part00 ... part33.
 	test -f $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part00
-	test -f $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part10
-	count=$$(find $(BASEFW_REPO_DIR)/archive-v2 -maxdepth 1 -type f -name 'payload-v2.tar.xz.b64.part*' | wc -l); [ "$$count" -eq 11 ]
+	test -f $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part33
+	count=$$(find $(BASEFW_REPO_DIR)/archive-v2 -maxdepth 1 -type f -name 'payload-v2.tar.xz.b64.part*' | wc -l); [ "$$count" -eq 34 ]
 	cat $(PAYLOAD_PARTS) | base64 -d > $(PKG_BUILD_DIR)/payload.tar.xz
 	echo '5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4  $(PKG_BUILD_DIR)/payload.tar.xz' | sha256sum -c -
 	tar -xJf $(PKG_BUILD_DIR)/payload.tar.xz -C $(PKG_BUILD_DIR)

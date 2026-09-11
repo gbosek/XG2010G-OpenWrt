@@ -91,7 +91,7 @@ jobs:
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
 
-      - name: Prepare OpenWrt host tools, toolchain and Airoha target tree
+      - name: Prepare OpenWrt host tools, toolchain, Airoha target tree and base SDK
         shell: bash
         run: |
           set -euo pipefail
@@ -105,7 +105,10 @@ jobs:
           make -j1 target/linux/prepare V=s
           KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
           test -f "$KDIR/arch/arm64/boot/dts/airoha/an7581-gemtek-xg2010g.dts"
-          echo 'PASS: OpenWrt host tools, target toolchain and XG2010G DTS tree are ready.'
+          # The Airoha/Gemtek package hooks deliberately refuse to compile LuCI until
+          # the vendor XG2010G base-firmware SDK payload has been installed.
+          make -j1 gemtek/xg2010g-base-firmware/install V=s
+          echo 'PASS: OpenWrt host tools, target toolchain, XG2010G DTS tree and base SDK are ready.'
 
       - name: Compile extracted PON packages and LuCI
         shell: bash

@@ -96,18 +96,55 @@ jobs:
         run: |
           set -euo pipefail
           cd src
-          make -j2 tools/install V=s
-          make -j2 toolchain/install V=s
+          mkdir -p build-logs
+
+          snapshot_resources() {
+            local tag="$1"
+            {
+              echo "=== ${tag} $(date -Is) ==="
+              echo "nproc=$(nproc)"
+              free -h || true
+              df -h || true
+            } >> build-logs/resources.log
+          }
+
+          run_stage() {
+            local name="$1"
+            shift
+            local log="build-logs/${name}.log"
+            snapshot_resources "before ${name}"
+            echo "::group::${name}"
+            set +e
+            "$@" >"$log" 2>&1
+            local rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::${name} failed with exit code ${rc}"
+              echo "----- last 300 lines: ${log} -----"
+              tail -n 300 "$log" || true
+            else
+              echo "----- last 80 lines: ${log} -----"
+              tail -n 80 "$log" || true
+            fi
+            snapshot_resources "after ${name} rc=${rc}"
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          # Keep CI parallelism conservative. The previous run failed during host-tool
+          # preparation after a very long compile, and GitHub truncated the visible log.
+          run_stage tools-install make -j2 tools/install V=s
+          run_stage toolchain-install make -j2 toolchain/install V=s
           test -x staging_dir/host/bin/openssl
           test -x staging_dir/host/bin/libdeflate-gzip
           # Package compilation pulls in package/kernel/linux. Prepare the target first so
           # OpenWrt copies its out-of-tree XG2010G DTS into the Linux source tree.
-          make -j1 target/linux/prepare V=s
+          run_stage target-linux-prepare make -j1 target/linux/prepare V=s
           KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
           test -f "$KDIR/arch/arm64/boot/dts/airoha/an7581-gemtek-xg2010g.dts"
           # The Airoha/Gemtek package hooks deliberately refuse to compile LuCI until
           # the vendor XG2010G base-firmware SDK payload has been installed.
-          make -j1 gemtek/xg2010g-base-firmware/install V=s
+          run_stage xg2010g-base-firmware make -j1 gemtek/xg2010g-base-firmware/install V=s
           echo 'PASS: OpenWrt host tools, target toolchain, XG2010G DTS tree and base SDK are ready.'
 
       - name: Compile extracted PON packages and LuCI
@@ -116,8 +153,43 @@ jobs:
           set -euo pipefail
           test -s packages/basefw-parity/xg2010g-parity-v2.tar.xz
           cd src
-          make -j2 package/luci-app-xg2010g/basefw-parity/compile V=s
-          make -j2 package/luci-app-xg2010g/compile V=s
+          mkdir -p build-logs
+
+          snapshot_resources() {
+            local tag="$1"
+            {
+              echo "=== ${tag} $(date -Is) ==="
+              echo "nproc=$(nproc)"
+              free -h || true
+              df -h || true
+            } >> build-logs/resources.log
+          }
+
+          run_stage() {
+            local name="$1"
+            shift
+            local log="build-logs/${name}.log"
+            snapshot_resources "before ${name}"
+            echo "::group::${name}"
+            set +e
+            "$@" >"$log" 2>&1
+            local rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::${name} failed with exit code ${rc}"
+              echo "----- last 300 lines: ${log} -----"
+              tail -n 300 "$log" || true
+            else
+              echo "----- last 80 lines: ${log} -----"
+              tail -n 80 "$log" || true
+            fi
+            snapshot_resources "after ${name} rc=${rc}"
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          run_stage basefw-parity-compile make -j2 package/luci-app-xg2010g/basefw-parity/compile V=s
+          run_stage luci-app-xg2010g-compile make -j2 package/luci-app-xg2010g/compile V=s
           for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
             find bin/packages bin/targets -type f \( -name "${p}_*.apk" -o -name "${p}_*.ipk" \) | grep -q . || {
               echo "ERROR: package binary not generated: $p"
@@ -125,3 +197,14 @@ jobs:
             }
           done
           echo 'PASS: extracted PON backend and functional LuCI packages compiled.'
+
+      - name: Upload Test-4B diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test4b-pon-control-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            src/build-logs/
+            src/.config

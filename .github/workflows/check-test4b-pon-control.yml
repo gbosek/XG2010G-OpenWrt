@@ -1,0 +1,66 @@
+name: Check XG2010G Test-4B PON Control
+
+on:
+  pull_request:
+    paths:
+      - 'packages/luci-app-xg2010g/**'
+      - '.github/workflows/check-test4b-pon-control.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-pon-control:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check PON control files
+        run: |
+          set -euo pipefail
+          sh -n packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          node --check packages/luci-app-xg2010g/htdocs/luci-static/resources/view/xg2010g/pon.js
+          grep -q "gpon|xgpon|xgspon|epon-1g|epon-10g-1g|epon-10g-10g" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "datapath-set" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "airoha-omcid" packages/luci-app-xg2010g/Makefile
+          grep -q "airoha-oamd" packages/luci-app-xg2010g/Makefile
+
+      - name: Clone pinned XG2010G baseline
+        run: |
+          git clone --filter=blob:none https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git src
+          cd src
+          git checkout b6bd44a7caf1b6979f1cb30433e33637b69e791e
+          test "$(git rev-parse HEAD)" = b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+      - name: Inject XG2010G LuCI and nested PON backend package
+        run: |
+          cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
+          test -f src/package/luci-app-xg2010g/basefw-parity/Makefile
+          test -x src/package/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+
+      - name: Install feeds
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Verify hard-required PON packages survive defconfig
+        run: |
+          set -euo pipefail
+          cd src
+          cat > .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_airoha-ponctl=y
+          CONFIG_PACKAGE_airoha-omcid=y
+          CONFIG_PACKAGE_airoha-oamd=y
+          CONFIG_PACKAGE_airoha-pon-debug=y
+          CONFIG_PACKAGE_luci-app-xg2010g=y
+          EOF
+          make defconfig
+          for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
+            grep -q "^CONFIG_PACKAGE_${p}=y$" .config || { echo "ERROR: missing package after defconfig: $p"; exit 1; }
+          done
+          echo 'PASS: functional PON LuCI backend packages are registered.'

@@ -91,6 +91,17 @@ jobs:
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
 
+      - name: Prepare OpenWrt host tools and toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          make -j2 tools/install V=s
+          make -j2 toolchain/install V=s
+          test -x staging_dir/host/bin/openssl
+          test -x staging_dir/host/bin/libdeflate-gzip
+          echo 'PASS: OpenWrt host tools and target toolchain are ready.'
+
       - name: Compile extracted PON packages and LuCI
         shell: bash
         run: |

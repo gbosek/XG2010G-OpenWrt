@@ -168,7 +168,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure Test-4B
+      - name: Configure Test-4B with uploaded base-firmware package parity
         run: |
           cd src
           rm -f .config
@@ -176,15 +176,95 @@ jobs:
           CONFIG_TARGET_airoha=y
           CONFIG_TARGET_airoha_an7581=y
           CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+
+          # Our additions
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-app-xg2010g=y
-          CONFIG_PACKAGE_ethtool=y
           CONFIG_PACKAGE_ubi-utils=y
           CONFIG_PACKAGE_nftables-json=y
+
+          # Packages found in uploaded working firmware but missing from Test-4B v1
+          CONFIG_PACKAGE_airoha-en8811h-firmware=y
+          CONFIG_PACKAGE_airoha-oamd=y
+          CONFIG_PACKAGE_airoha-omcid=y
+          CONFIG_PACKAGE_airoha-pon-debug=y
+          CONFIG_PACKAGE_airoha-ponctl=y
+          CONFIG_PACKAGE_attendedsysupgrade-common=y
+          CONFIG_PACKAGE_autocore=y
+          CONFIG_PACKAGE_conntrack=y
+          CONFIG_PACKAGE_ethtool-full=y
+          CONFIG_PACKAGE_ip-bridge=y
+          CONFIG_PACKAGE_ip-full=y
+          CONFIG_PACKAGE_iperf3=y
+          CONFIG_PACKAGE_kmod-airoha-en7572=y
+          CONFIG_PACKAGE_kmod-airoha-xpon=y
+          CONFIG_PACKAGE_kmod-crypto-aead=y
+          CONFIG_PACKAGE_kmod-crypto-chacha20poly1305=y
+          CONFIG_PACKAGE_kmod-crypto-kpp=y
+          CONFIG_PACKAGE_kmod-crypto-lib-chacha20=y
+          CONFIG_PACKAGE_kmod-crypto-lib-chacha20poly1305=y
+          CONFIG_PACKAGE_kmod-crypto-lib-curve25519=y
+          CONFIG_PACKAGE_kmod-crypto-lib-poly1305=y
+          CONFIG_PACKAGE_kmod-crypto-manager=y
+          CONFIG_PACKAGE_kmod-crypto-null=y
+          CONFIG_PACKAGE_kmod-hwmon-core=y
+          CONFIG_PACKAGE_kmod-i2c-core=y
+          CONFIG_PACKAGE_kmod-inet-diag=y
+          CONFIG_PACKAGE_kmod-libphy=y
+          CONFIG_PACKAGE_kmod-netlink-diag=y
+          CONFIG_PACKAGE_kmod-nf-socket=y
+          CONFIG_PACKAGE_kmod-nf-tproxy=y
+          CONFIG_PACKAGE_kmod-nft-bridge=y
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-ovpn-backports=y
+          CONFIG_PACKAGE_kmod-phy-airoha-en8811h=y
+          CONFIG_PACKAGE_kmod-phy-realtek=y
+          CONFIG_PACKAGE_kmod-tcp-bbr=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_kmod-udptunnel4=y
+          CONFIG_PACKAGE_kmod-udptunnel6=y
+          CONFIG_PACKAGE_kmod-wireguard=y
+          CONFIG_PACKAGE_libatomic1=y
+          CONFIG_PACKAGE_libbpf1=y
+          CONFIG_PACKAGE_libelf1=y
+          CONFIG_PACKAGE_libiperf3=y
+          CONFIG_PACKAGE_libnetfilter-cthelper0=y
+          CONFIG_PACKAGE_libnetfilter-cttimeout1=y
+          CONFIG_PACKAGE_libnetfilter-queue1=y
+          CONFIG_PACKAGE_libpcap1=y
+          CONFIG_PACKAGE_libpcre2=y
+          CONFIG_PACKAGE_librt=y
+          CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
+          CONFIG_PACKAGE_luci-app-iptv=y
+          CONFIG_PACKAGE_luci-app-pon=y
+          CONFIG_PACKAGE_luci-i18n-attendedsysupgrade-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-iptv-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-pon-zh-cn=y
+          CONFIG_PACKAGE_luci-theme-argon=y
+          CONFIG_PACKAGE_luci-theme-aurora=y
+          CONFIG_PACKAGE_rpcd-mod-rpcsys=y
+          CONFIG_PACKAGE_rtl826x-firmware=y
+          CONFIG_PACKAGE_tcpdump=y
+          CONFIG_PACKAGE_ucode-mod-math=y
+          CONFIG_PACKAGE_wget-ssl=y
+
           CONFIG_VERSION_DIST="XG2010G-Test4B"
-          CONFIG_VERSION_NUMBER="6.18.44-basefw-lan-dsd-luci"
+          CONFIG_VERSION_NUMBER="6.18.44-basefw-parity-lan-dsd-luci"
           EOF
           make defconfig
+
+          # Critical parity gate: these were present in the uploaded working image.
+          for p in \
+            airoha-en8811h-firmware airoha-oamd airoha-omcid airoha-pon-debug airoha-ponctl \
+            ethtool-full ip-full iperf3 kmod-airoha-en7572 kmod-airoha-xpon \
+            kmod-phy-airoha-en8811h kmod-phy-realtek luci-app-pon rtl826x-firmware tcpdump wget-ssl; do
+            grep -q "^CONFIG_PACKAGE_${p}=y$" .config || { echo "ERROR: base-firmware package missing after defconfig: $p"; exit 1; }
+          done
+          grep '^CONFIG_PACKAGE_' .config | sort > ../test4b-package-config.txt
 
       - name: Download sources and preflight
         shell: bash
@@ -209,7 +289,7 @@ jobs:
         if: always()
         run: |
           mkdir -p out
-          cp build-test4b.log kernel-preflight-test4b.log source-baseline-test4b.txt test4b-dts.diff out/ 2>/dev/null || true
+          cp build-test4b.log kernel-preflight-test4b.log source-baseline-test4b.txt test4b-dts.diff test4b-package-config.txt out/ 2>/dev/null || true
           find src/bin/targets/airoha/an7581 -maxdepth 1 -type f -name '*.itb' -exec cp -v {} out/ \; 2>/dev/null || true
           find src/bin -type f -name '*luci-app-xg2010g*.ipk' -exec cp -v {} out/ \; 2>/dev/null || true
           find src/build_dir -type f -name '*xg2010g*.dtb' -exec cp -v {} out/xg2010g-test4b.dtb \; -quit 2>/dev/null || true
@@ -218,6 +298,13 @@ jobs:
             grep -n -E 'ethernet@3|ethernet-port@4|ethernet-port@5|lan1|lan2|lan3|lan4|2500base-x|usxgmii|ethernet-phy@8|ethernet-phy@5|ubi@20000|calibration@12000' out/xg2010g-test4b.decompiled.dts > out/test4b-dt-check.txt || true
           fi
           (cd out && sha256sum *.itb *.ipk 2>/dev/null || true) > out/sha256sums.txt
+          cat > out/BASE-FIRMWARE-PARITY.txt <<'EOF'
+          Test-4B v2 restores the package classes found in the uploaded working firmware:
+          Airoha PON userspace (ponctl/omcid/oamd/debug), XG-PON + EN7572 kernel modules,
+          EN8811H + RTL826x firmware/PHY support, full ethtool/ip/iperf/tcpdump diagnostics,
+          LuCI PON/IPTV/themes/i18n, WireGuard/OpenVPN-related modules and dependencies.
+          It additionally keeps luci-app-xg2010g with PON/NPU/DSD diagnostics.
+          EOF
           cat > out/TEST4B-SAFETY.txt <<'EOF'
           TEST-4B IS INITRAMFS-VALIDATION-ONLY.
           Do NOT sysupgrade yet.
@@ -230,6 +317,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: xg2010g-test4b-basefw-lan-dsd-luci
+          name: xg2010g-test4b-basefw-parity-lan-dsd-luci
           path: out/
           retention-days: 14

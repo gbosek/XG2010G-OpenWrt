@@ -2,14 +2,14 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xg2010g-basefw-pon
 PKG_VERSION:=1.0
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 PKG_LICENSE:=Proprietary
 
-# The extracted payload is stored in the outer repository next to src/ during
-# GitHub Actions builds. Test-4B copies this package definition into src/package
-# while keeping the payload outside the OpenWrt source tree.
+# The complete payload is kept in the private outer repository next to src/
+# during GitHub Actions builds. Test-4B copies this package definition into
+# src/package while keeping the proprietary payload outside the OpenWrt tree.
 BASEFW_REPO_DIR:=$(TOPDIR)/../packages/basefw-parity
-PAYLOAD_PARTS:=$(sort $(wildcard $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part*))
+PAYLOAD_FILE:=$(BASEFW_REPO_DIR)/xg2010g-parity-v2.tar.xz
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -51,11 +51,8 @@ endef
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	# The complete archive is 34 ordered chunks: part00 ... part33.
-	test -f $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part00
-	test -f $(BASEFW_REPO_DIR)/archive-v2/payload-v2.tar.xz.b64.part33
-	count=$$(find $(BASEFW_REPO_DIR)/archive-v2 -maxdepth 1 -type f -name 'payload-v2.tar.xz.b64.part*' | wc -l); [ "$$count" -eq 34 ]
-	cat $(PAYLOAD_PARTS) | base64 -d > $(PKG_BUILD_DIR)/payload.tar.xz
+	test -s $(PAYLOAD_FILE)
+	cp $(PAYLOAD_FILE) $(PKG_BUILD_DIR)/payload.tar.xz
 	echo '5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4  $(PKG_BUILD_DIR)/payload.tar.xz' | sha256sum -c -
 	tar -xJf $(PKG_BUILD_DIR)/payload.tar.xz -C $(PKG_BUILD_DIR)
 	# Byte-for-byte checks against the uploaded firmware extraction.

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'packages/luci-app-xg2010g/**'
+      - 'packages/basefw-parity/**'
       - '.github/workflows/check-test4b-pon-control.yml'
   workflow_dispatch:
 
@@ -23,8 +24,36 @@ jobs:
           node --check packages/luci-app-xg2010g/htdocs/luci-static/resources/view/xg2010g/pon.js
           grep -q "gpon|xgpon|xgspon|epon-1g|epon-10g-1g|epon-10g-10g" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
           grep -q "datapath-set" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "data-path stats" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "uci commit pon" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
           grep -q "airoha-omcid" packages/luci-app-xg2010g/Makefile
           grep -q "airoha-oamd" packages/luci-app-xg2010g/Makefile
+
+      - name: Validate extracted base-firmware payload when complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          d=packages/basefw-parity/archive-v2
+          if [ ! -s "$d/payload-v2.tar.xz.b64.part33" ]; then
+            echo 'Payload upload is not complete yet; hash verification stays gated until part33 exists.'
+            exit 0
+          fi
+          count=$(find "$d" -maxdepth 1 -type f -name 'payload-v2.tar.xz.b64.part*' | wc -l)
+          [ "$count" -eq 34 ] || { echo "ERROR: expected 34 payload chunks, found $count"; exit 1; }
+          cat "$d"/payload-v2.tar.xz.b64.part* | base64 -d > /tmp/xg2010g-parity.tar.xz
+          echo '5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4  /tmp/xg2010g-parity.tar.xz' | sha256sum -c -
+          mkdir /tmp/xg2010g-parity
+          tar -xJf /tmp/xg2010g-parity.tar.xz -C /tmp/xg2010g-parity
+          echo '3bd8b7e264f6738de7eff66afa44068a9684fb0dd559b950ad702a2e59f7b01c  /tmp/xg2010g-parity/usr/sbin/ponctl' | sha256sum -c -
+          echo 'aee701662d3c25f98c37eb91c600836e1cff1263f0664572eb83d3060f392429  /tmp/xg2010g-parity/usr/sbin/airoha-oamd' | sha256sum -c -
+          echo '6e361fc1be99f64185b62b7e93fde1462d392309774a36af59dd4b1248850b63  /tmp/xg2010g-parity/usr/sbin/airoha-omcid' | sha256sum -c -
+          echo 'ae1963b2a84a17eaa2fb9052591bdb5152838feda045d7313f45a8608b918533  /tmp/xg2010g-parity/lib/firmware/rtl8261n.bin' | sha256sum -c -
+          echo '7a0bcf605739d6f780e0799bbea0c73acf56c9a4cbba015da5d27589bf4352ca  /tmp/xg2010g-parity/lib/firmware/rtl8264b.bin' | sha256sum -c -
+          test -x /tmp/xg2010g-parity/etc/init.d/pon
+          test -x /tmp/xg2010g-parity/etc/init.d/airoha-omcid
+          test -x /tmp/xg2010g-parity/etc/init.d/airoha-oamd
+          test -s /tmp/xg2010g-parity/etc/config/pon
+          echo 'PASS: extracted XG2010G payload is byte-for-byte verified.'
 
       - name: Clone pinned XG2010G baseline
         run: |

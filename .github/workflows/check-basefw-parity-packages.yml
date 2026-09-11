@@ -1,0 +1,88 @@
+name: Check XG2010G Base-Firmware Parity Packages
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'packages/basefw-parity/**'
+      - '.github/workflows/check-basefw-parity-packages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-parity-packages:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone pinned XG2010G baseline
+        run: |
+          git clone --filter=blob:none https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git src
+          cd src
+          git checkout b6bd44a7caf1b6979f1cb30433e33637b69e791e
+          test "$(git rev-parse HEAD)" = b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+      - name: Inject parity package definitions
+        run: |
+          cp -a packages/basefw-parity src/package/basefw-parity
+          test -f src/package/basefw-parity/Makefile
+          grep -q '^define Package/airoha-oamd$' src/package/basefw-parity/Makefile
+          grep -q '^define Package/airoha-omcid$' src/package/basefw-parity/Makefile
+          grep -q '^define Package/airoha-ponctl$' src/package/basefw-parity/Makefile
+          grep -q '^define Package/airoha-pon-debug$' src/package/basefw-parity/Makefile
+
+      - name: Install feeds
+        run: |
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Verify hard-required packages survive defconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          cat > .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_airoha-oamd=y
+          CONFIG_PACKAGE_airoha-omcid=y
+          CONFIG_PACKAGE_airoha-ponctl=y
+          CONFIG_PACKAGE_airoha-pon-debug=y
+          CONFIG_PACKAGE_luci-app-pon=y
+          CONFIG_PACKAGE_rtl826x-firmware=y
+          CONFIG_PACKAGE_ip-full=y
+          CONFIG_PACKAGE_ip-bridge=y
+          CONFIG_PACKAGE_tcpdump=y
+          CONFIG_PACKAGE_ubi-utils=y
+          EOF
+          make defconfig
+          for p in airoha-oamd airoha-omcid airoha-ponctl airoha-pon-debug luci-app-pon rtl826x-firmware; do
+            grep -q "^CONFIG_PACKAGE_${p}=y$" .config || {
+              echo "ERROR: package did not survive defconfig: $p"
+              exit 1
+            }
+          done
+          echo 'PASS: all hard-required XG2010G parity packages are registered.'
+
+      - name: Report payload readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src/package/basefw-parity
+          for f in \
+            blobs/rtl8261n.bin.xz.b64 \
+            blobs/rtl8264b.bin.xz.b64 \
+            blobs/small-assets.tar.gz.b64; do
+            if [ -s "$f" ]; then echo "READY $f"; else echo "MISSING $f"; fi
+          done
+          for stem in ponctl airoha-oamd airoha-omcid; do
+            if compgen -G "blobs/${stem}.xz.b64*" >/dev/null; then
+              echo "READY ${stem} payload fragments"
+            else
+              echo "MISSING ${stem} payload fragments"
+            fi
+          done

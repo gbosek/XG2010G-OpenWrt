@@ -30,14 +30,16 @@ valid_serial() {
 	v="$1"
 	[ -z "$v" ] && return 0
 	[ "$v" = default ] && return 0
-	case "$v" in
-		*[!0-9A-Fa-f]*) ;;
-		????????????????) return 0 ;;
-	esac
-	case "$v" in
-		????????????) : ;;
-		*) return 1 ;;
-	esac
+
+	# ponctl accepts either 16 raw hex digits or VEND + 8 hex digits.
+	if [ ${#v} -eq 16 ]; then
+		case "$v" in
+			*[!0-9A-Fa-f]*) return 1 ;;
+			*) return 0 ;;
+		esac
+	fi
+
+	[ ${#v} -eq 12 ] || return 1
 	vendor=${v%????????}
 	serial=${v#????}
 	case "$vendor" in *[!A-Za-z0-9]*) return 1 ;; esac
@@ -69,27 +71,83 @@ pon_device() {
 	uci -q get pon.line0.device 2>/dev/null || printf '%s\n' pon0
 }
 
+pon_mode() {
+	uci -q get pon.line0.mode 2>/dev/null || true
+}
+
+show_cmd() {
+	dev="$1"
+	shift
+	echo
+	printf '%s' '-- ponctl'
+	printf ' %s' "$@"
+	printf ' --\n'
+	ponctl --device "$dev" "$@" 2>&1 || true
+}
+
 show_status() {
 	need ponctl
 	dev="$(pon_device)"
 	echo "== XG2010G PON =="
 	echo "device=$dev"
-	for cmd in "status" "mode show" "identity show" "data-path show" "stats"; do
-		echo
-		echo "-- ponctl $cmd --"
-		# shellcheck disable=SC2086
-		ponctl --device "$dev" $cmd 2>&1 || true
-	done
+	echo "configured_mode=$(pon_mode)"
+
+	show_cmd "$dev" status
+	show_cmd "$dev" mode show
+	show_cmd "$dev" identity show
+	show_cmd "$dev" data-path show
+	show_cmd "$dev" data-path stats
+	show_cmd "$dev" frontend
+	show_cmd "$dev" control
+
 	echo
 	echo "-- interfaces --"
 	ip -br link show "$dev" 2>/dev/null || true
 	ip -br link show omci0 2>/dev/null || true
 	ip -br link show oam0 2>/dev/null || true
+
+	echo
+	echo "-- management agents --"
+	if have omcictl; then
+		omcictl status --instance line0_omci 2>&1 || true
+	fi
+	if have oamctl; then
+		oamctl status --instance line0_oam 2>&1 || true
+	fi
+
 	echo
 	echo "-- services --"
 	/etc/init.d/pon status 2>&1 || true
 	/etc/init.d/airoha-omcid status 2>&1 || true
 	/etc/init.d/airoha-oamd status 2>&1 || true
+}
+
+restart_management() {
+	mode="$(pon_mode)"
+	case "$mode" in
+		epon-*)
+			/etc/init.d/airoha-omcid stop 2>/dev/null || true
+			/etc/init.d/airoha-oamd restart
+			;;
+		*)
+			/etc/init.d/airoha-oamd stop 2>/dev/null || true
+			/etc/init.d/airoha-omcid restart
+			;;
+	esac
+}
+
+start_management() {
+	mode="$(pon_mode)"
+	case "$mode" in
+		epon-*)
+			/etc/init.d/airoha-omcid stop 2>/dev/null || true
+			/etc/init.d/airoha-oamd start
+			;;
+		*)
+			/etc/init.d/airoha-oamd stop 2>/dev/null || true
+			/etc/init.d/airoha-omcid start
+			;;
+	esac
 }
 
 apply_config() {
@@ -103,9 +161,10 @@ apply_config() {
 	valid_serial "$serial" || { echo "invalid serial_number" >&2; exit 2; }
 	valid_registration_id "$regid" || { echo "invalid registration_id" >&2; exit 2; }
 
+	# LuCI writes the UCI values first; commit here so the active identity survives reboot.
+	uci commit pon
 	/etc/init.d/pon reload
-	/etc/init.d/airoha-omcid restart || true
-	/etc/init.d/airoha-oamd restart || true
+	restart_management
 	show_status
 }
 
@@ -114,18 +173,18 @@ service_action() {
 	case "$action" in
 		start)
 			/etc/init.d/pon start
-			/etc/init.d/airoha-omcid start || true
-			/etc/init.d/airoha-oamd start || true
+			start_management
 			;;
 		stop)
-			/etc/init.d/airoha-omcid stop || true
-			/etc/init.d/airoha-oamd stop || true
-			/etc/init.d/pon stop || true
+			/etc/init.d/airoha-omcid stop 2>/dev/null || true
+			/etc/init.d/airoha-oamd stop 2>/dev/null || true
+			/etc/init.d/pon stop
 			;;
 		restart)
+			/etc/init.d/airoha-omcid stop 2>/dev/null || true
+			/etc/init.d/airoha-oamd stop 2>/dev/null || true
 			/etc/init.d/pon restart || /etc/init.d/pon reload
-			/etc/init.d/airoha-omcid restart || true
-			/etc/init.d/airoha-oamd restart || true
+			start_management
 			;;
 	esac
 	show_status

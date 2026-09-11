@@ -17,6 +17,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Before cleanup:'
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean || true
+          echo 'After cleanup:'
+          df -h /
+
       - name: Syntax-check PON control files
         run: |
           set -euo pipefail
@@ -44,8 +55,6 @@ jobs:
           echo '6e361fc1be99f64185b62b7e93fde1462d392309774a36af59dd4b1248850b63  /tmp/xg2010g-parity/usr/sbin/airoha-omcid' | sha256sum -c -
           echo 'ae1963b2a84a17eaa2fb9052591bdb5152838feda045d7313f45a8608b918533  /tmp/xg2010g-parity/lib/firmware/rtl8261n.bin' | sha256sum -c -
           echo '7a0bcf605739d6f780e0799bbea0c73acf56c9a4cbba015da5d27589bf4352ca  /tmp/xg2010g-parity/lib/firmware/rtl8264b.bin' | sha256sum -c -
-          # The extraction tool preserved file bytes but not original executable mode bits.
-          # Package install recipes use INSTALL_BIN, which restores executable permissions.
           test -s /tmp/xg2010g-parity/etc/init.d/pon
           test -s /tmp/xg2010g-parity/etc/init.d/airoha-omcid
           test -s /tmp/xg2010g-parity/etc/init.d/airoha-oamd
@@ -54,6 +63,7 @@ jobs:
 
       - name: Clone pinned XG2010G baseline
         run: |
+          set -euo pipefail
           git clone --filter=blob:none https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git src
           cd src
           git checkout b6bd44a7caf1b6979f1cb30433e33637b69e791e
@@ -61,12 +71,14 @@ jobs:
 
       - name: Inject XG2010G LuCI and nested PON backend package
         run: |
+          set -euo pipefail
           cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
           test -f src/package/luci-app-xg2010g/basefw-parity/Makefile
           test -x src/package/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
 
       - name: Install feeds
         run: |
+          set -euo pipefail
           cd src
           ./scripts/feeds update -a
           ./scripts/feeds install -a
@@ -91,7 +103,7 @@ jobs:
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
 
-      - name: Prepare OpenWrt host tools, toolchain and Airoha target tree
+      - name: Prepare OpenWrt host tools, toolchain and configured Airoha kernel tree
         shell: bash
         run: |
           set -euo pipefail
@@ -131,25 +143,29 @@ jobs:
             return "$rc"
           }
 
-          # Keep CI parallelism conservative and persist per-stage logs.
           run_stage tools-install make -j2 tools/install V=s
           run_stage toolchain-install make -j2 toolchain/install V=s
           test -x staging_dir/host/bin/openssl
           test -x staging_dir/host/bin/libdeflate-gzip
 
-          # The XG2010G DTS is an OpenWrt target-tree source. target/linux/prepare
-          # prepares the upstream kernel tree, but it does not have to copy this DTS
-          # into arch/arm64/boot/dts/airoha at this stage.
           test -f target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
           grep -q 'DEVICE_DTS := an7581-gemtek-xg2010g' target/linux/airoha/image/an7581.mk
           run_stage target-linux-prepare make -j1 target/linux/prepare V=s
+
+          # Previous failure: gpio-button-hotplug required $(LINUX_DIR)/.config,
+          # but target/linux/prepare only unpacked/patched Linux 6.18.44. The
+          # dtb target depends on STAMP_CONFIGURED, so it runs Kernel/Configure
+          # and creates the required .config without a full kernel/modules build.
+          run_stage target-linux-dtb make -j1 target/linux/dtb V=s
 
           KBASE=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581
           KDIR="$(find "$KBASE" -maxdepth 1 -type d -name 'linux-*' -print -quit)"
           test -n "$KDIR"
           test -d "$KDIR"
-          echo "Prepared kernel tree: $KDIR"
-          echo 'PASS: OpenWrt host tools, target toolchain and XG2010G target tree are ready.'
+          test -s "$KDIR/.config"
+          grep -q 'CONFIG_ARM64=y' "$KDIR/.config"
+          echo "Configured kernel tree: $KDIR"
+          echo 'PASS: host tools, target toolchain and configured XG2010G kernel tree are ready.'
 
       - name: Compile extracted PON packages and LuCI
         shell: bash
@@ -184,18 +200,20 @@ jobs:
               echo "----- last 300 lines: ${log} -----"
               tail -n 300 "$log" || true
             else
-              echo "----- last 80 lines: ${log} -----"
-              tail -n 80 "$log" || true
+              echo "----- last 100 lines: ${log} -----"
+              tail -n 100 "$log" || true
             fi
             snapshot_resources "after ${name} rc=${rc}"
             echo "::endgroup::"
             return "$rc"
           }
 
-          run_stage basefw-parity-compile make -j2 package/luci-app-xg2010g/basefw-parity/compile V=s
-          run_stage luci-app-xg2010g-compile make -j2 package/luci-app-xg2010g/compile V=s
+          # Keep this serial until the package gate passes. The previous -j2
+          # run exposed a kernel-config prerequisite failure in a default kmod.
+          run_stage basefw-parity-compile make -j1 package/luci-app-xg2010g/basefw-parity/compile V=s
+          run_stage luci-app-xg2010g-compile make -j1 package/luci-app-xg2010g/compile V=s
           for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
-            find bin/packages bin/targets -type f \( -name "${p}_*.apk" -o -name "${p}_*.ipk" \) | grep -q . || {
+            find bin/packages bin/targets -type f \( -name "${p}-*.apk" -o -name "${p}_*.apk" -o -name "${p}_*.ipk" \) | grep -q . || {
               echo "ERROR: package binary not generated: $p"
               exit 1
             }

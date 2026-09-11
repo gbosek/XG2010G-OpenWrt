@@ -44,9 +44,11 @@ jobs:
           echo '6e361fc1be99f64185b62b7e93fde1462d392309774a36af59dd4b1248850b63  /tmp/xg2010g-parity/usr/sbin/airoha-omcid' | sha256sum -c -
           echo 'ae1963b2a84a17eaa2fb9052591bdb5152838feda045d7313f45a8608b918533  /tmp/xg2010g-parity/lib/firmware/rtl8261n.bin' | sha256sum -c -
           echo '7a0bcf605739d6f780e0799bbea0c73acf56c9a4cbba015da5d27589bf4352ca  /tmp/xg2010g-parity/lib/firmware/rtl8264b.bin' | sha256sum -c -
-          test -x /tmp/xg2010g-parity/etc/init.d/pon
-          test -x /tmp/xg2010g-parity/etc/init.d/airoha-omcid
-          test -x /tmp/xg2010g-parity/etc/init.d/airoha-oamd
+          # The extraction tool preserved file bytes but not original executable mode bits.
+          # Package install recipes use INSTALL_BIN, which restores executable permissions.
+          test -s /tmp/xg2010g-parity/etc/init.d/pon
+          test -s /tmp/xg2010g-parity/etc/init.d/airoha-omcid
+          test -s /tmp/xg2010g-parity/etc/init.d/airoha-oamd
           test -s /tmp/xg2010g-parity/etc/config/pon
           echo 'PASS: complete XG2010G payload is byte-for-byte verified.'
 

@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=xg2010g-basefw-pon
 PKG_VERSION:=1.0
-PKG_RELEASE:=4
+PKG_RELEASE:=5
 PKG_LICENSE:=Proprietary
 
 # The complete payload is kept in the private outer repository next to src/
@@ -66,23 +66,30 @@ endef
 define Build/Compile
 endef
 
+# These ELF files are extracted byte-for-byte from the uploaded working
+# XG2010G firmware.  Do not use INSTALL_BIN for them: INSTALL_BIN invokes the
+# target strip tool, while these already-built proprietary binaries may not
+# carry a section layout that the current toolchain can strip safely.
 define Package/airoha-ponctl/install
 	$(INSTALL_DIR) $(1)/usr/sbin $(1)/etc/config $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/usr/sbin/ponctl $(1)/usr/sbin/ponctl
+	$(CP) $(PKG_BUILD_DIR)/usr/sbin/ponctl $(1)/usr/sbin/ponctl
+	chmod 0755 $(1)/usr/sbin/ponctl
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/etc/config/pon $(1)/etc/config/pon
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/pon $(1)/etc/init.d/pon
 endef
 
 define Package/airoha-omcid/install
 	$(INSTALL_DIR) $(1)/usr/sbin $(1)/usr/bin $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/usr/sbin/airoha-omcid $(1)/usr/sbin/airoha-omcid
+	$(CP) $(PKG_BUILD_DIR)/usr/sbin/airoha-omcid $(1)/usr/sbin/airoha-omcid
+	chmod 0755 $(1)/usr/sbin/airoha-omcid
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/airoha-omcid $(1)/etc/init.d/airoha-omcid
 	ln -sf /usr/sbin/airoha-omcid $(1)/usr/bin/omcictl
 endef
 
 define Package/airoha-oamd/install
 	$(INSTALL_DIR) $(1)/usr/sbin $(1)/usr/bin $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/usr/sbin/airoha-oamd $(1)/usr/sbin/airoha-oamd
+	$(CP) $(PKG_BUILD_DIR)/usr/sbin/airoha-oamd $(1)/usr/sbin/airoha-oamd
+	chmod 0755 $(1)/usr/sbin/airoha-oamd
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/etc/init.d/airoha-oamd $(1)/etc/init.d/airoha-oamd
 	ln -sf /usr/sbin/airoha-oamd $(1)/usr/bin/oamctl
 endef

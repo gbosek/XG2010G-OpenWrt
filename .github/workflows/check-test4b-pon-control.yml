@@ -93,3 +93,20 @@ jobs:
             grep -q "^CONFIG_PACKAGE_${p}=y$" .config || { echo "ERROR: missing package after defconfig: $p"; exit 1; }
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
+
+      - name: Compile extracted PON packages when payload is complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s packages/basefw-parity/archive-v2/payload-v2.tar.xz.b64.part33 ]; then
+            echo 'Skipping package compile until all 34 payload chunks are present.'
+            exit 0
+          fi
+          cd src
+          make -j1 V=s package/xg2010g-basefw-pon/compile
+          make -j1 V=s package/luci-app-xg2010g/compile
+          find bin/packages -type f \( -name 'airoha-ponctl*.apk' -o -name 'airoha-omcid*.apk' -o -name 'airoha-oamd*.apk' -o -name 'airoha-pon-debug*.apk' -o -name 'luci-app-xg2010g*.apk' \) -print | tee ../pon-package-files.txt
+          for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
+            grep -q "/${p}.*\.apk$" ../pon-package-files.txt || { echo "ERROR: package artifact missing: $p"; exit 1; }
+          done
+          echo 'PASS: PON backend and LuCI packages compiled successfully.'

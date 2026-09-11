@@ -108,7 +108,105 @@ jobs:
           test -s "$KDIR/.config"
           echo "$KDIR" > ../kernel-dir.txt
 
-      - name: Compile EN7581 xPON v2 modules
+      - name: Restore real GPON XG-PON XGS-PON ioctl handlers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          mkdir -p build-logs
+          make -j1 package/kernel/airoha-pon/prepare V=s >build-logs/xpon-prepare.log 2>&1
+
+          GPON="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_gpon.c' -print -quit)"
+          FDET="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_fdet.c' -print -quit)"
+          IFC="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_if.c' -print -quit)"
+          MCI="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_mci.c' -print -quit)"
+          PHY="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_phy.c' -print -quit)"
+          for f in "$GPON" "$FDET" "$IFC" "$MCI" "$PHY"; do test -s "$f"; done
+
+          python3 - "$GPON" "$FDET" "$IFC" "$MCI" "$PHY" <<'PY'
+          import sys
+          from pathlib import Path
+
+          gpon, fdet, ifc, mci, phy = map(Path, sys.argv[1:])
+
+          def replace_once(path, old, new, label):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one {label}, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          # The upstream 6.18 port makes the module buildable by disabling the
+          # original vendor control paths and replacing them with stubs. Keep
+          # the Linux-6.18 API/Kbuild compatibility fixes, but restore the real
+          # handlers so CI exposes every remaining functional porting error.
+          replace_once(fdet, "#if 0\nint fdet_cmd_proc", "int fdet_cmd_proc", "fdet #if 0")
+          replace_once(fdet,
+              "#endif\n\nint fdet_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
+              "", "fdet stub")
+
+          replace_once(gpon, "#if 0\nint gpon_10g_cmd_proc", "int gpon_10g_cmd_proc", "GPON #if 0")
+          gpon_tail = """#endif
+
+int gpon_10g_cmd_proc(uint cmd, ulong arg)
+{
+\treturn -EOPNOTSUPP;
+}
+
+int gpon_cmd_proc(uint cmd, ulong arg)
+{
+\treturn -EOPNOTSUPP;
+}
+
+int rdkb_10g_cmd_proc(uint cmd, ulong arg)
+{
+\treturn -EOPNOTSUPP;
+}
+"""
+          replace_once(gpon, gpon_tail, "", "GPON ioctl stubs")
+
+          replace_once(ifc, "#if 0\nint if_cmd_proc", "int if_cmd_proc", "interface #if 0")
+          replace_once(ifc,
+              "#endif\n\nint if_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
+              "", "interface stub")
+
+          replace_once(phy, "#if 0\nint phy_cmd_proc", "int phy_cmd_proc", "PHY #if 0")
+          replace_once(phy,
+              "#endif\n\nint phy_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n",
+              "", "PHY stub")
+
+          replace_once(mci, "#if 0\nlong pon_mci_ioctl", "long pon_mci_ioctl", "MCI #if 0")
+          mci_stub = """#endif
+
+long pon_mci_ioctl(struct file *filp, uint cmd, ulong arg)
+{
+\tif (_IOC_TYPE(cmd) == EPON_MAGIC)
+\t\treturn epon_cmd_proc(cmd, arg);
+
+\treturn -ENOTTY;
+}
+"""
+          replace_once(mci, mci_stub, "", "MCI EPON-only stub")
+
+          checks = {
+              gpon: ["int gpon_10g_cmd_proc", "int gpon_cmd_proc", "int rdkb_10g_cmd_proc"],
+              fdet: ["int fdet_cmd_proc"],
+              ifc: ["int if_cmd_proc"],
+              mci: ["long pon_mci_ioctl"],
+              phy: ["int phy_cmd_proc"],
+          }
+          for path, symbols in checks.items():
+              text = path.read_text()
+              for sym in symbols:
+                  if text.count(sym) != 1:
+                      raise SystemExit(f"{path}: {sym} count is {text.count(sym)}, expected 1")
+
+          print("PASS: real vendor PON ioctl handlers restored in prepared 6.18 source tree")
+          PY
+
+          grep -n -E '^(long pon_mci_ioctl|int (gpon_10g_cmd_proc|gpon_cmd_proc|rdkb_10g_cmd_proc|if_cmd_proc|fdet_cmd_proc|phy_cmd_proc))' "$GPON" "$FDET" "$IFC" "$MCI" "$PHY" | tee ../restored-ioctl-symbols.txt
+
+      - name: Compile EN7581 xPON real control modules
         shell: bash
         run: |
           set -euo pipefail
@@ -118,7 +216,8 @@ jobs:
           make -j1 package/kernel/airoha-pon/compile V=s >build-logs/xpon-driver-compile.log 2>&1
           rc=$?
           set -e
-          tail -n $([ "$rc" -eq 0 ] && echo 120 || echo 500) build-logs/xpon-driver-compile.log || true
+          tail -n $([ "$rc" -eq 0 ] && echo 160 || echo 700) build-logs/xpon-driver-compile.log || true
+          echo "$rc" > ../functional-ioctl-compile.rc
           [ "$rc" -eq 0 ] || exit "$rc"
 
           find build_dir -type f \( -name 'xpon_10g.ko' -o -name 'phy_10g.ko' -o -name 'airoha_ecnt_pon_phy.ko' \) -print | tee ../xpon-modules.txt
@@ -127,7 +226,7 @@ jobs:
           grep -q 'airoha_ecnt_pon_phy.ko' ../xpon-modules.txt
           find bin -type f -name 'kmod-airoha-xpon-en757x*.apk' -print | tee ../xpon-package.txt
           test -s ../xpon-package.txt
-          echo 'PASS: EN7581 vendor xPON v2 driver compiles against the pinned Linux 6.18.44 XG2010G tree.'
+          echo 'PASS: original EN7581 GPON/XG-PON/XGS-PON/IF/PHY ioctl paths compile on Linux 6.18.44.'
 
       - name: Upload xPON compile diagnostics
         if: always()
@@ -143,3 +242,5 @@ jobs:
             xpon-modules.txt
             xpon-package.txt
             kernel-dir.txt
+            restored-ioctl-symbols.txt
+            functional-ioctl-compile.rc

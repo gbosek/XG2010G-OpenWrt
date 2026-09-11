@@ -1,15 +1,19 @@
 {
   "luci-app-xg2010g": {
-    "description": "Grant access to XG2010G PON/NPU diagnostics and safe DSD helper",
+    "description": "Grant access to XG2010G PON/NPU controls, diagnostics and safe DSD helper",
     "read": {
+      "uci": [ "pon" ],
       "file": {
         "/usr/libexec/xg2010g-status": [ "exec" ],
-        "/usr/libexec/xg2010g-dsd": [ "exec" ]
+        "/usr/libexec/xg2010g-dsd": [ "exec" ],
+        "/usr/libexec/xg2010g-pon": [ "exec" ]
       }
     },
     "write": {
+      "uci": [ "pon" ],
       "file": {
-        "/usr/libexec/xg2010g-dsd": [ "exec" ]
+        "/usr/libexec/xg2010g-dsd": [ "exec" ],
+        "/usr/libexec/xg2010g-pon": [ "exec" ]
       }
     }
   }

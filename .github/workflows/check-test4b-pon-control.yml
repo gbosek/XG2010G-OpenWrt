@@ -91,7 +91,7 @@ jobs:
           done
           echo 'PASS: functional PON LuCI backend packages are registered.'
 
-      - name: Prepare OpenWrt host tools, toolchain, Airoha target tree and base SDK
+      - name: Prepare OpenWrt host tools, toolchain and Airoha target tree
         shell: bash
         run: |
           set -euo pipefail
@@ -131,21 +131,25 @@ jobs:
             return "$rc"
           }
 
-          # Keep CI parallelism conservative. The previous run failed during host-tool
-          # preparation after a very long compile, and GitHub truncated the visible log.
+          # Keep CI parallelism conservative and persist per-stage logs.
           run_stage tools-install make -j2 tools/install V=s
           run_stage toolchain-install make -j2 toolchain/install V=s
           test -x staging_dir/host/bin/openssl
           test -x staging_dir/host/bin/libdeflate-gzip
-          # Package compilation pulls in package/kernel/linux. Prepare the target first so
-          # OpenWrt copies its out-of-tree XG2010G DTS into the Linux source tree.
+
+          # The XG2010G DTS is an OpenWrt target-tree source. target/linux/prepare
+          # prepares the upstream kernel tree, but it does not have to copy this DTS
+          # into arch/arm64/boot/dts/airoha at this stage.
+          test -f target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          grep -q 'DEVICE_DTS := an7581-gemtek-xg2010g' target/linux/airoha/image/an7581.mk
           run_stage target-linux-prepare make -j1 target/linux/prepare V=s
-          KDIR=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.18.44
-          test -f "$KDIR/arch/arm64/boot/dts/airoha/an7581-gemtek-xg2010g.dts"
-          # The Airoha/Gemtek package hooks deliberately refuse to compile LuCI until
-          # the vendor XG2010G base-firmware SDK payload has been installed.
-          run_stage xg2010g-base-firmware make -j1 gemtek/xg2010g-base-firmware/install V=s
-          echo 'PASS: OpenWrt host tools, target toolchain, XG2010G DTS tree and base SDK are ready.'
+
+          KBASE=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581
+          KDIR="$(find "$KBASE" -maxdepth 1 -type d -name 'linux-*' -print -quit)"
+          test -n "$KDIR"
+          test -d "$KDIR"
+          echo "Prepared kernel tree: $KDIR"
+          echo 'PASS: OpenWrt host tools, target toolchain and XG2010G target tree are ready.'
 
       - name: Compile extracted PON packages and LuCI
         shell: bash

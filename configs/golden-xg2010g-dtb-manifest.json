@@ -83,7 +83,7 @@
   },
   "npu": {
     "compatible": "airoha,en7581-npu",
-    "reg": 513802240,
+    "reg": 512753664,
     "status": "okay",
     "reserved_npu_base": 2214592512,
     "reserved_npu_size": 10485760,
@@ -94,7 +94,7 @@
   },
   "ethernet": {
     "compatible": "airoha,en7581-eth",
-    "reg": 532021248,
+    "reg": 531955712,
     "status": "okay"
   },
   "storage": {

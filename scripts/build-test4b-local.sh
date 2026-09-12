@@ -160,11 +160,24 @@ rm -rf "$OUT/artifacts"
 mkdir -p "$OUT/artifacts"
 find "$SRC/bin/targets/airoha/an7581" -maxdepth 1 -type f -name '*.itb' -exec cp -v {} "$OUT/artifacts/" \; 2>/dev/null || true
 find "$SRC/bin" -type f \( -name '*luci-app-xg2010g*.apk' -o -name '*luci-app-xg2010g*.ipk' \) -exec cp -v {} "$OUT/artifacts/" \; 2>/dev/null || true
-find "$SRC/build_dir" -type f -name '*xg2010g*.dtb' -exec cp -v {} "$OUT/artifacts/xg2010g-test4b.dtb" \; -quit 2>/dev/null || true
+DTB_SRC="$(find "$SRC/build_dir" -type f -name '*xg2010g*.dtb' -print -quit)"
+if [[ -z "$DTB_SRC" || ! -s "$DTB_SRC" ]]; then
+  echo "ERROR: XG2010G DTB was not produced by the build." >&2
+  exit 5
+fi
+cp -v "$DTB_SRC" "$OUT/artifacts/xg2010g-test4b.dtb"
 
-if [[ -f "$OUT/artifacts/xg2010g-test4b.dtb" ]] && command -v dtc >/dev/null; then
+# This is the hard board-regression gate. It parses phandles from the binary DTB
+# and compares LAN/PCS/PHY/reset/PON/EN7572/NPU/QDMA/UBI facts against a manifest
+# extracted directly from the user's uploaded golden ITB.
+python3 "$REPO_ROOT/scripts/verify-test4b-dtb.py" \
+  "$OUT/artifacts/xg2010g-test4b.dtb" \
+  --manifest "$REPO_ROOT/configs/golden-xg2010g-dtb-manifest.json" \
+  --profile candidate | tee "$OUT/artifacts/golden-dtb-regression.txt"
+
+if command -v dtc >/dev/null; then
   dtc -I dtb -O dts "$OUT/artifacts/xg2010g-test4b.dtb" > "$OUT/artifacts/xg2010g-test4b.decompiled.dts"
-  grep -n -E 'ethernet@3|ethernet-port@4|ethernet-port@5|lan1|lan2|lan3|lan4|2500base-x|usxgmii|ethernet-phy@8|ethernet-phy@5|ubi@20000|calibration@12000' \
+  grep -n -E 'ethernet@3|ethernet-port@4|ethernet-port@5|lan1|lan2|lan3|lan4|2500base-x|usxgmii|ethernet-phy@8|ethernet-phy@5|partition@20000|ubi@20000|calibration@12000' \
     "$OUT/artifacts/xg2010g-test4b.decompiled.dts" > "$OUT/artifacts/test4b-dt-check.txt" || true
 fi
 (
@@ -173,8 +186,8 @@ fi
 ) > "$OUT/artifacts/sha256sums.txt"
 
 if [[ "$PON_MODE" == strict ]]; then
-  result="PASS: strict Test-4B image build completed. Runtime validation is still required before flashing."
+  result="PASS: strict Test-4B image build + golden DTB regression gate completed. Runtime validation is still required before flashing."
 else
-  result="PASS: LAN/NPU smoke image build completed. PON is intentionally absent; DO NOT treat this as the final firmware."
+  result="PASS: LAN/NPU smoke image build + golden DTB regression gate completed. PON packages are intentionally absent; DO NOT treat this as the final firmware."
 fi
 printf '%s\nGolden ITB: %s\nBuild framework: %s\n' "$result" "$GOLDEN_ITB_SHA256" "$FRAMEWORK_COMMIT" | tee "$OUT/RESULT.txt"

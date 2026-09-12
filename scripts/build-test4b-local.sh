@@ -60,12 +60,13 @@ cp "$REPO_ROOT/patches/743-net-phy-realtek-xg2010g-d2dc-rtk-serdes.patch" \
   patch -p1 < "$REPO_ROOT/patches/746-airoha-xg2010g-enable-rtl8261-serdes-tuning.patch"
 )
 
-DTS="$SRC/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts"
+DTS_REL="target/linux/airoha/dts/an7581-gemtek-xg2010g.dts"
+DTS="$SRC/$DTS_REL"
 python3 "$REPO_ROOT/scripts/prepare-test4b-dts.py" "$DTS"
 (
   cd "$SRC"
   git diff --check
-  git diff -- "$DTS" > "$OUT/test4b-dts.diff"
+  git diff -- "$DTS_REL" > "$OUT/test4b-dts.diff"
 )
 
 cd "$SRC"
@@ -92,7 +93,7 @@ else
   # Smoke mode is deliberately not presented as a final firmware. It is useful
   # for proving the pinned baseline, LAN2/RTL8261 fixes and the basic image build
   # while the xPON driver is being repaired separately.
-  grep -Ev '^CONFIG_PACKAGE_(airoha-oamd|airoha-omcid|airoha-pon-debug|airoha-ponctl|kmod-airoha-en7572|kmod-airoha-xpon|luci-app-pon)=' \
+  grep -Ev '^CONFIG_PACKAGE_(airoha-oamd|airoha-omcid|airoha-pon-debug|airoha-ponctl|kmod-airoha-en7572|kmod-airoha-xpon|luci-app-pon|luci-i18n-pon-zh-cn)=' \
     "$REPO_ROOT/configs/test4b-basefw-full-packages.config" >> .config
   printf '%s\n' 'CONFIG_VERSION_NUMBER="6.18.44-basefw-lan-smoke"' >> .config
 fi

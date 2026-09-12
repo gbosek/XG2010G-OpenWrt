@@ -1,23 +1,39 @@
-From: XG2010G Test-2
-Subject: [PATCH] arm64: dts: airoha: enable RTL8261 SerDes tuning on XG2010G
+From: XG2010G Test-4B
+Subject: [PATCH] arm64: dts: airoha: restore XG2010G RTL8261 wiring and enable SerDes tuning
 
-The XG2010G uses RTL8261-family 10G PHYs at MDIO addresses 0x08 and 0x05.
-Enable the board-specific host-side SerDes tuning only for those PHY nodes.
+The user's uploaded working XG2010G 6.18.44 ITB is the functional board
+baseline.  Its DTB defines two Clause-45 RTL8261-family PHYs:
+
+  MDIO 0x05: reset GPIO29, active low, 200 ms assert/deassert
+  MDIO 0x08: reset GPIO27, active low, 200 ms assert/deassert
+
+Keep those XG2010G-specific reset lines/timings exactly.  Do not copy the
+XR1710G reset GPIOs, polarity properties or sds-mode.  The only intentional
+functional addition here is the opt-in for the Linux 6.18 RTL826x host-side
+SerDes recovery used to repair the USXGMII/PCS carrier failure.
 
 --- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
 +++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
-@@ -13,6 +13,18 @@
+@@ -13,6 +13,30 @@
  	};
  };
  
 +&mdio {
 +	ethernet-phy@8 {
++		compatible = "ethernet-phy-ieee802.3-c45";
 +		reg = <0x8>;
++		reset-gpios = <&en7581_pinctrl 27 GPIO_ACTIVE_LOW>;
++		reset-assert-us = <200000>;
++		reset-deassert-us = <200000>;
 +		realtek,patch-rtk-serdes;
 +	};
 +
 +	ethernet-phy@5 {
++		compatible = "ethernet-phy-ieee802.3-c45";
 +		reg = <0x5>;
++		reset-gpios = <&en7581_pinctrl 29 GPIO_ACTIVE_LOW>;
++		reset-assert-us = <200000>;
++		reset-deassert-us = <200000>;
 +		realtek,patch-rtk-serdes;
 +	};
 +};

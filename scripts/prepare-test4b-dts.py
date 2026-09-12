@@ -67,9 +67,30 @@ s += r'''
 &gsw_port2 { status = "disabled"; };
 &gsw_port3 { status = "disabled"; };
 &gsw_port4 { status = "okay"; label = "lan1"; };
-&gsw_phy2 { status = "disabled"; };
-&gsw_phy3 { status = "disabled"; };
-&gsw_phy4 { status = "okay"; };
+
+/*
+ * The Nokia framework enables board-specific LED pinmux on the internal PHYs.
+ * The uploaded XG2010G golden DTB leaves those LED nodes disabled and carries
+ * no PHY LED pinctrl properties.  Strip the foreign GPIO44/45/46 setup.
+ */
+&gsw_phy2 {
+  status = "disabled";
+  /delete-property/ pinctrl-names;
+  /delete-property/ pinctrl-0;
+};
+&gsw_phy3 {
+  status = "disabled";
+  /delete-property/ pinctrl-names;
+  /delete-property/ pinctrl-0;
+};
+&gsw_phy4 {
+  status = "okay";
+  /delete-property/ pinctrl-names;
+  /delete-property/ pinctrl-0;
+};
+&gsw_phy2_led0 { status = "disabled"; };
+&gsw_phy3_led0 { status = "disabled"; };
+&gsw_phy4_led0 { status = "disabled"; };
 
 /*
  * The framework's Nokia common DTS gives EN8811H GPIO31 reset wiring and an
@@ -104,6 +125,7 @@ s += r'''
     ethernet-port@4 {
       compatible = "airoha,eth-port";
       reg = <4>;
+      status = "okay";
       openwrt,netdev-name = "lan2";
       phy-handle = <&en8811>;
       phy-mode = "2500base-x";
@@ -113,6 +135,7 @@ s += r'''
     ethernet-port@5 {
       compatible = "airoha,eth-port";
       reg = <5>;
+      status = "okay";
       openwrt,netdev-name = "lan3";
       phy-handle = <&rtl8261_8>;
       phy-mode = "usxgmii";
@@ -131,6 +154,7 @@ required = (
     'pcs-handle = <&pcie_pcs 1>',
     'pcs-handle = <&eth_pcs>',
     '/delete-property/ reset-gpios;',
+    '/delete-property/ pinctrl-names;',
     'ubi@20000',
     'calibration@12000',
 )

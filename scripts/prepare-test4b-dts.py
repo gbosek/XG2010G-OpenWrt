@@ -71,6 +71,18 @@ s += r'''
 &gsw_phy3 { status = "disabled"; };
 &gsw_phy4 { status = "okay"; };
 
+/*
+ * The framework's Nokia common DTS gives EN8811H GPIO31 reset wiring and an
+ * LED child.  Neither exists in the user's golden XG2010G DTB.  Delete those
+ * foreign board properties before investigating the real 1G/2.5G link path.
+ */
+&en8811 {
+  /delete-property/ reset-gpios;
+  /delete-property/ reset-assert-us;
+  /delete-property/ reset-deassert-us;
+  /delete-node/ leds;
+};
+
 &gdm4 {
   status = "okay";
   openwrt,netdev-name = "lan4";
@@ -118,6 +130,7 @@ required = (
     'pcs-handle = <&usb_pcs>',
     'pcs-handle = <&pcie_pcs 1>',
     'pcs-handle = <&eth_pcs>',
+    '/delete-property/ reset-gpios;',
     'ubi@20000',
     'calibration@12000',
 )

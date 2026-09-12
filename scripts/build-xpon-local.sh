@@ -7,8 +7,11 @@ PON_SRC="$REPO_ROOT/airoha-collection"
 OUT="$REPO_ROOT/output/xpon-probe"
 LOG="$OUT/logs"
 
-SOURCE_REPO="${SOURCE_REPO:-https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git}"
-SOURCE_COMMIT="${SOURCE_COMMIT:-b6bd44a7caf1b6979f1cb30433e33637b69e791e}"
+# The naoki tree is only the OpenWrt/ImmortalWrt build framework.  The uploaded
+# working ITB remains the functional baseline for XG2010G PON behaviour.
+FRAMEWORK_REPO="${FRAMEWORK_REPO:-${SOURCE_REPO:-https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git}}"
+FRAMEWORK_COMMIT="${FRAMEWORK_COMMIT:-${SOURCE_COMMIT:-b6bd44a7caf1b6979f1cb30433e33637b69e791e}}"
+GOLDEN_ITB_SHA256="${GOLDEN_ITB_SHA256:-472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503}"
 PON_REPO="${PON_REPO:-https://github.com/Yuzhii0718/airoha-collection.git}"
 PON_COMMIT="${PON_COMMIT:-d9454f2b13fef57a1a325591aff4cf02908a964a}"
 JOBS="${JOBS:-2}"
@@ -47,8 +50,13 @@ sync_repo() {
   test "$(git -C "$dir" rev-parse HEAD)" = "$commit"
 }
 
-sync_repo "$SRC" "$SOURCE_REPO" "$SOURCE_COMMIT"
+sync_repo "$SRC" "$FRAMEWORK_REPO" "$FRAMEWORK_COMMIT"
 sync_repo "$PON_SRC" "$PON_REPO" "$PON_COMMIT"
+
+test -f "$SRC/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts" || {
+  echo "ERROR: selected framework commit has no XG2010G DTS target." >&2
+  exit 2
+}
 
 rm -rf "$SRC/package/kernel/airoha-pon" "$SRC/package/luci-app-xg2010g"
 cp -a "$PON_SRC/airoha-pon" "$SRC/package/kernel/airoha-pon"
@@ -76,7 +84,8 @@ grep -q '^CONFIG_PACKAGE_kmod-airoha-xpon-en757x=y$' .config || {
   exit 2
 }
 cp .config "$OUT/xpon.config"
-printf '%s\n' "$SOURCE_COMMIT" > "$OUT/source-commit.txt"
+printf '%s\n' "$FRAMEWORK_COMMIT" > "$OUT/framework-commit.txt"
+printf '%s\n' "$GOLDEN_ITB_SHA256" > "$OUT/golden-itb-sha256.txt"
 printf '%s\n' "$PON_COMMIT" > "$OUT/pon-source-commit.txt"
 
 stage tools-install make -j"$JOBS" tools/install V=s
@@ -128,8 +137,9 @@ while IFS= read -r f; do cp -v "$f" "$OUT/"; done < "$OUT/xpon-package.txt"
 
 cat > "$OUT/RESULT.txt" <<EOF
 PASS: EN7581 public xPON source compiled with original GPON/XG-PON/XGS-PON ioctl paths restored.
-ImmortalWrt baseline: $SOURCE_COMMIT
-xPON source: $PON_COMMIT
-This is a compile proof only; runtime O5/OMCI/XGEM/datapath validation is still required before flashing a full image.
+Golden ITB: $GOLDEN_ITB_SHA256
+Build framework: $FRAMEWORK_COMMIT
+xPON source reference: $PON_COMMIT
+This is a compile proof only; runtime O5/OMCI/OAM/GEM/T-CONT/XGEM/datapath validation is still required before flashing a full image.
 EOF
 cat "$OUT/RESULT.txt"

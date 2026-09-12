@@ -1,0 +1,211 @@
+name: Probe XG2010G EN7581 xPON Driver
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/check-test4b-xpon-driver.yml'
+      - 'packages/luci-app-xg2010g/**'
+      - 'packages/basefw-parity/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+  SOURCE_COMMIT: b6bd44a7caf1b6979f1cb30433e33637b69e791e
+  PON_REPO: https://github.com/Yuzhii0718/airoha-collection.git
+  PON_COMMIT: d9454f2b13fef57a1a325591aff4cf02908a964a
+
+jobs:
+  xpon-driver-compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+
+      - name: Clone pinned XG2010G and xPON sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none "$SOURCE_REPO" src
+          git -C src checkout "$SOURCE_COMMIT"
+          test "$(git -C src rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          git clone --filter=blob:none "$PON_REPO" airoha-collection
+          git -C airoha-collection checkout "$PON_COMMIT"
+          test "$(git -C airoha-collection rev-parse HEAD)" = "$PON_COMMIT"
+
+          test -f airoha-collection/airoha-pon/Makefile
+          test -f airoha-collection/airoha-pon/patches/001-port-vendor-drivers-to-linux-6.18.patch
+          grep -q 'TARGET_airoha_an7581' airoha-collection/airoha-pon/Makefile
+          grep -q 'Linux 6.18' airoha-collection/airoha-pon/patches/001-port-vendor-drivers-to-linux-6.18.patch
+
+      - name: Inject EN7581 xPON package and PON userspace package definition
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a airoha-collection/airoha-pon src/package/kernel/airoha-pon
+          cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
+          test -d src/package/kernel/airoha-pon/src/xpon-en757x/xpon_10g
+          test -d src/package/kernel/airoha-pon/src/xpon-en757x/xpon_phy_10g
+
+      - name: Install feeds and configure AN7581 xPON
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          cat > .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_kmod-airoha-xpon-en757x=y
+          CONFIG_PACKAGE_kmod-i2c-core=y
+          EOF
+          make defconfig
+          grep -q '^CONFIG_PACKAGE_kmod-airoha-xpon-en757x=y$' .config
+          grep -q '^CONFIG_TARGET_airoha_an7581=y$' .config
+          grep -E '^(CONFIG_TARGET_airoha|CONFIG_PACKAGE_kmod-airoha-xpon|CONFIG_PACKAGE_kmod-i2c)' .config | tee ../xpon-config.txt
+
+      - name: Build tools, toolchain and configured kernel tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          mkdir -p build-logs
+          run_stage() {
+            local name="$1"; shift
+            echo "::group::$name"
+            set +e
+            "$@" >"build-logs/${name}.log" 2>&1
+            rc=$?
+            set -e
+            tail -n $([ "$rc" -eq 0 ] && echo 80 || echo 300) "build-logs/${name}.log" || true
+            echo "::endgroup::"
+            return "$rc"
+          }
+          run_stage tools-install make -j2 tools/install V=s
+          run_stage toolchain-install make -j2 toolchain/install V=s
+          run_stage target-linux-prepare make -j1 target/linux/prepare V=s
+          run_stage target-linux-dtb make -j1 target/linux/dtb V=s
+          KBASE=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581
+          KDIR="$(find "$KBASE" -maxdepth 1 -type d -name 'linux-*' -print -quit)"
+          test -s "$KDIR/.config"
+          echo "$KDIR" > ../kernel-dir.txt
+
+      - name: Restore real GPON XG-PON XGS-PON ioctl handlers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          mkdir -p build-logs
+          make -j1 package/kernel/airoha-pon/prepare V=s >build-logs/xpon-prepare.log 2>&1
+
+          GPON="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_gpon.c' -print -quit)"
+          FDET="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_fdet.c' -print -quit)"
+          IFC="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_if.c' -print -quit)"
+          MCI="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_mci.c' -print -quit)"
+          PHY="$(find build_dir -type f -path '*/xpon_10g/src/xmcs/xmcs_phy.c' -print -quit)"
+          for f in "$GPON" "$FDET" "$IFC" "$MCI" "$PHY"; do test -s "$f"; done
+
+          python3 - "$GPON" "$FDET" "$IFC" "$MCI" "$PHY" <<'PY'
+          import sys
+          from pathlib import Path
+
+          gpon, fdet, ifc, mci, phy = map(Path, sys.argv[1:])
+
+          def replace_once(path, old, new, label):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one {label}, found {count}")
+              path.write_text(text.replace(old, new, 1))
+
+          replace_once(fdet, "#if 0\nint fdet_cmd_proc", "int fdet_cmd_proc", "fdet #if 0")
+          replace_once(fdet, "#endif\n\nint fdet_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "fdet stub")
+
+          replace_once(gpon, "#if 0\nint gpon_10g_cmd_proc", "int gpon_10g_cmd_proc", "GPON #if 0")
+          gpon_tail = "#endif\n\nint gpon_10g_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n\nint gpon_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n\nint rdkb_10g_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n"
+          replace_once(gpon, gpon_tail, "", "GPON ioctl stubs")
+
+          replace_once(ifc, "#if 0\nint if_cmd_proc", "int if_cmd_proc", "interface #if 0")
+          replace_once(ifc, "#endif\n\nint if_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "interface stub")
+
+          replace_once(phy, "#if 0\nint phy_cmd_proc", "int phy_cmd_proc", "PHY #if 0")
+          replace_once(phy, "#endif\n\nint phy_cmd_proc(uint cmd, ulong arg)\n{\n\treturn -EOPNOTSUPP;\n}\n", "", "PHY stub")
+
+          replace_once(mci, "#if 0\nlong pon_mci_ioctl", "long pon_mci_ioctl", "MCI #if 0")
+          mci_stub = "#endif\n\nlong pon_mci_ioctl(struct file *filp, uint cmd, ulong arg)\n{\n\tif (_IOC_TYPE(cmd) == EPON_MAGIC)\n\t\treturn epon_cmd_proc(cmd, arg);\n\n\treturn -ENOTTY;\n}\n"
+          replace_once(mci, mci_stub, "", "MCI EPON-only stub")
+
+          checks = {
+              gpon: ["int gpon_10g_cmd_proc", "int gpon_cmd_proc", "int rdkb_10g_cmd_proc"],
+              fdet: ["int fdet_cmd_proc"],
+              ifc: ["int if_cmd_proc"],
+              mci: ["long pon_mci_ioctl"],
+              phy: ["int phy_cmd_proc"],
+          }
+          for path, symbols in checks.items():
+              text = path.read_text()
+              for sym in symbols:
+                  if text.count(sym) != 1:
+                      raise SystemExit(f"{path}: {sym} count is {text.count(sym)}, expected 1")
+
+          print("PASS: real vendor PON ioctl handlers restored in prepared 6.18 source tree")
+          PY
+
+          grep -n -E '^(long pon_mci_ioctl|int (gpon_10g_cmd_proc|gpon_cmd_proc|rdkb_10g_cmd_proc|if_cmd_proc|fdet_cmd_proc|phy_cmd_proc))' "$GPON" "$FDET" "$IFC" "$MCI" "$PHY" | tee ../restored-ioctl-symbols.txt
+
+      - name: Compile EN7581 xPON real control modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          mkdir -p build-logs
+          set +e
+          make -j1 package/kernel/airoha-pon/compile V=s >build-logs/xpon-driver-compile.log 2>&1
+          rc=$?
+          set -e
+          tail -n $([ "$rc" -eq 0 ] && echo 160 || echo 700) build-logs/xpon-driver-compile.log || true
+          echo "$rc" > ../functional-ioctl-compile.rc
+          [ "$rc" -eq 0 ] || exit "$rc"
+
+          find build_dir -type f \( -name 'xpon_10g.ko' -o -name 'phy_10g.ko' -o -name 'airoha_ecnt_pon_phy.ko' \) -print | tee ../xpon-modules.txt
+          grep -q 'xpon_10g.ko' ../xpon-modules.txt
+          grep -q 'phy_10g.ko' ../xpon-modules.txt
+          grep -q 'airoha_ecnt_pon_phy.ko' ../xpon-modules.txt
+          find bin -type f -name 'kmod-airoha-xpon-en757x*.apk' -print | tee ../xpon-package.txt
+          test -s ../xpon-package.txt
+          echo 'PASS: original EN7581 GPON/XG-PON/XGS-PON/IF/PHY ioctl paths compile on Linux 6.18.44.'
+
+      - name: Upload xPON compile diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test4b-xpon-driver-probe
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            src/build-logs/
+            src/.config
+            xpon-config.txt
+            xpon-modules.txt
+            xpon-package.txt
+            kernel-dir.txt
+            restored-ioctl-symbols.txt
+            functional-ioctl-compile.rc

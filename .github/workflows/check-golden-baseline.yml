@@ -1,0 +1,120 @@
+name: Check XG2010G Golden Baseline
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/check-golden-baseline.yml'
+      - 'source.lock'
+      - 'scripts/**'
+      - 'patches/**'
+      - 'configs/**'
+      - 'docs/GOLDEN_BASELINE_FIRMWARE.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xg2010g-golden-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  xpon-functional-compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+
+      - name: Verify golden ITB identity and framework separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^GOLDEN_ITB_SHA256=472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503$' source.lock
+          grep -q '^GOLDEN_VERSION_BASE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^FRAMEWORK_COMMIT=b6bd44a7caf1b6979f1cb30433e33637b69e791e$' source.lock
+          grep -q '^EXPECTED_KERNEL_RELEASE=6.18.44$' source.lock
+          grep -q '472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503' docs/GOLDEN_BASELINE_FIRMWARE.md
+          grep -q 'sole functional golden baseline' docs/GOLDEN_BASELINE_FIRMWARE.md
+          grep -q 'source/build framework reference' docs/GOLDEN_BASELINE_FIRMWARE.md
+          echo 'PASS: uploaded ITB is the functional oracle; naoki is only the build framework.'
+
+      - name: Compile EN7581 xPON with real ioctl paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . ./source.lock
+          set +a
+          JOBS=2 bash scripts/build-xpon-local.sh
+
+      - name: Upload xPON diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-baseline-xpon-probe
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            output/xpon-probe/
+
+  lan-npu-smoke-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean || true
+          df -h /
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
+
+      - name: Verify golden ITB identity and framework separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^GOLDEN_ITB_SHA256=472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503$' source.lock
+          grep -q '^GOLDEN_VERSION_BASE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^FRAMEWORK_COMMIT=b6bd44a7caf1b6979f1cb30433e33637b69e791e$' source.lock
+          grep -q '^EXPECTED_KERNEL_RELEASE=6.18.44$' source.lock
+          grep -q '472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503' docs/GOLDEN_BASELINE_FIRMWARE.md
+          echo 'PASS: LAN/NPU smoke build will use the framework, not redefine the golden baseline.'
+
+      - name: Build LAN/NPU smoke image on reference framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          set -a
+          . ./source.lock
+          set +a
+          PON_MODE=off JOBS=2 bash scripts/build-test4b-local.sh
+
+      - name: Upload LAN/NPU smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-baseline-lan-npu-smoke
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            output/test4b/

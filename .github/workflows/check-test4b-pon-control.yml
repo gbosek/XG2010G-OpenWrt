@@ -1,0 +1,232 @@
+name: Check XG2010G Test-4B PON Control
+
+on:
+  pull_request:
+    paths:
+      - 'packages/luci-app-xg2010g/**'
+      - 'packages/basefw-parity/**'
+      - '.github/workflows/check-test4b-pon-control.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-pon-control:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Before cleanup:'
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo apt-get clean || true
+          echo 'After cleanup:'
+          df -h /
+
+      - name: Syntax-check PON control files
+        run: |
+          set -euo pipefail
+          sh -n packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          node --check packages/luci-app-xg2010g/htdocs/luci-static/resources/view/xg2010g/pon.js
+          grep -q "gpon|xgpon|xgspon|epon-1g|epon-10g-1g|epon-10g-10g" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "datapath-set" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "data-path stats" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "uci commit pon" packages/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+          grep -q "airoha-omcid" packages/luci-app-xg2010g/Makefile
+          grep -q "airoha-oamd" packages/luci-app-xg2010g/Makefile
+
+      - name: Validate complete extracted base-firmware payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          p=packages/basefw-parity/xg2010g-parity-v2.tar.xz
+          test -s "$p"
+          echo '5d8a87780fbec056c21709ec86520faef93057dbfc9d7a7aeb0ed783542c94f4  packages/basefw-parity/xg2010g-parity-v2.tar.xz' | sha256sum -c -
+          rm -rf /tmp/xg2010g-parity
+          mkdir /tmp/xg2010g-parity
+          tar -xJf "$p" -C /tmp/xg2010g-parity
+          echo '3bd8b7e264f6738de7eff66afa44068a9684fb0dd559b950ad702a2e59f7b01c  /tmp/xg2010g-parity/usr/sbin/ponctl' | sha256sum -c -
+          echo 'aee701662d3c25f98c37eb91c600836e1cff1263f0664572eb83d3060f392429  /tmp/xg2010g-parity/usr/sbin/airoha-oamd' | sha256sum -c -
+          echo '6e361fc1be99f64185b62b7e93fde1462d392309774a36af59dd4b1248850b63  /tmp/xg2010g-parity/usr/sbin/airoha-omcid' | sha256sum -c -
+          echo 'ae1963b2a84a17eaa2fb9052591bdb5152838feda045d7313f45a8608b918533  /tmp/xg2010g-parity/lib/firmware/rtl8261n.bin' | sha256sum -c -
+          echo '7a0bcf605739d6f780e0799bbea0c73acf56c9a4cbba015da5d27589bf4352ca  /tmp/xg2010g-parity/lib/firmware/rtl8264b.bin' | sha256sum -c -
+          test -s /tmp/xg2010g-parity/etc/init.d/pon
+          test -s /tmp/xg2010g-parity/etc/init.d/airoha-omcid
+          test -s /tmp/xg2010g-parity/etc/init.d/airoha-oamd
+          test -s /tmp/xg2010g-parity/etc/config/pon
+          echo 'PASS: complete XG2010G payload is byte-for-byte verified.'
+
+      - name: Clone pinned XG2010G baseline
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git src
+          cd src
+          git checkout b6bd44a7caf1b6979f1cb30433e33637b69e791e
+          test "$(git rev-parse HEAD)" = b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+      - name: Inject XG2010G LuCI and nested PON backend package
+        run: |
+          set -euo pipefail
+          cp -a packages/luci-app-xg2010g src/package/luci-app-xg2010g
+          test -f src/package/luci-app-xg2010g/basefw-parity/Makefile
+          test -x src/package/luci-app-xg2010g/root/usr/libexec/xg2010g-pon
+
+      - name: Install feeds
+        run: |
+          set -euo pipefail
+          cd src
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Verify hard-required PON packages survive defconfig
+        run: |
+          set -euo pipefail
+          cd src
+          cat > .config <<'EOF'
+          CONFIG_TARGET_airoha=y
+          CONFIG_TARGET_airoha_an7581=y
+          CONFIG_TARGET_airoha_an7581_DEVICE_gemtek_xg2010g=y
+          CONFIG_PACKAGE_airoha-ponctl=y
+          CONFIG_PACKAGE_airoha-omcid=y
+          CONFIG_PACKAGE_airoha-oamd=y
+          CONFIG_PACKAGE_airoha-pon-debug=y
+          CONFIG_PACKAGE_luci-app-xg2010g=y
+          EOF
+          make defconfig
+          for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
+            grep -q "^CONFIG_PACKAGE_${p}=y$" .config || { echo "ERROR: missing package after defconfig: $p"; exit 1; }
+          done
+          echo 'PASS: functional PON LuCI backend packages are registered.'
+
+      - name: Prepare OpenWrt host tools, toolchain and configured Airoha kernel tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src
+          mkdir -p build-logs
+
+          snapshot_resources() {
+            local tag="$1"
+            {
+              echo "=== ${tag} $(date -Is) ==="
+              echo "nproc=$(nproc)"
+              free -h || true
+              df -h || true
+            } >> build-logs/resources.log
+          }
+
+          run_stage() {
+            local name="$1"
+            shift
+            local log="build-logs/${name}.log"
+            snapshot_resources "before ${name}"
+            echo "::group::${name}"
+            set +e
+            "$@" >"$log" 2>&1
+            local rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::${name} failed with exit code ${rc}"
+              echo "----- last 300 lines: ${log} -----"
+              tail -n 300 "$log" || true
+            else
+              echo "----- last 80 lines: ${log} -----"
+              tail -n 80 "$log" || true
+            fi
+            snapshot_resources "after ${name} rc=${rc}"
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          run_stage tools-install make -j2 tools/install V=s
+          run_stage toolchain-install make -j2 toolchain/install V=s
+          test -x staging_dir/host/bin/openssl
+          test -x staging_dir/host/bin/libdeflate-gzip
+
+          test -f target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
+          grep -q 'DEVICE_DTS := an7581-gemtek-xg2010g' target/linux/airoha/image/an7581.mk
+          run_stage target-linux-prepare make -j1 target/linux/prepare V=s
+
+          # Previous failure: gpio-button-hotplug required $(LINUX_DIR)/.config,
+          # but target/linux/prepare only unpacked/patched Linux 6.18.44. The
+          # dtb target depends on STAMP_CONFIGURED, so it runs Kernel/Configure
+          # and creates the required .config without a full kernel/modules build.
+          run_stage target-linux-dtb make -j1 target/linux/dtb V=s
+
+          KBASE=build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581
+          KDIR="$(find "$KBASE" -maxdepth 1 -type d -name 'linux-*' -print -quit)"
+          test -n "$KDIR"
+          test -d "$KDIR"
+          test -s "$KDIR/.config"
+          grep -q 'CONFIG_ARM64=y' "$KDIR/.config"
+          echo "Configured kernel tree: $KDIR"
+          echo 'PASS: host tools, target toolchain and configured XG2010G kernel tree are ready.'
+
+      - name: Compile extracted PON packages and LuCI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s packages/basefw-parity/xg2010g-parity-v2.tar.xz
+          cd src
+          mkdir -p build-logs
+
+          snapshot_resources() {
+            local tag="$1"
+            {
+              echo "=== ${tag} $(date -Is) ==="
+              echo "nproc=$(nproc)"
+              free -h || true
+              df -h || true
+            } >> build-logs/resources.log
+          }
+
+          run_stage() {
+            local name="$1"
+            shift
+            local log="build-logs/${name}.log"
+            snapshot_resources "before ${name}"
+            echo "::group::${name}"
+            set +e
+            "$@" >"$log" 2>&1
+            local rc=$?
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "::error::${name} failed with exit code ${rc}"
+              echo "----- last 300 lines: ${log} -----"
+              tail -n 300 "$log" || true
+            else
+              echo "----- last 100 lines: ${log} -----"
+              tail -n 100 "$log" || true
+            fi
+            snapshot_resources "after ${name} rc=${rc}"
+            echo "::endgroup::"
+            return "$rc"
+          }
+
+          # Keep this serial until the package gate passes. The previous -j2
+          # run exposed a kernel-config prerequisite failure in a default kmod.
+          run_stage basefw-parity-compile make -j1 package/luci-app-xg2010g/basefw-parity/compile V=s
+          run_stage luci-app-xg2010g-compile make -j1 package/luci-app-xg2010g/compile V=s
+          for p in airoha-ponctl airoha-omcid airoha-oamd airoha-pon-debug luci-app-xg2010g; do
+            find bin/packages bin/targets -type f \( -name "${p}-*.apk" -o -name "${p}_*.apk" -o -name "${p}_*.ipk" \) | grep -q . || {
+              echo "ERROR: package binary not generated: $p"
+              exit 1
+            }
+          done
+          echo 'PASS: extracted PON backend and functional LuCI packages compiled.'
+
+      - name: Upload Test-4B diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test4b-pon-control-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            src/build-logs/
+            src/.config

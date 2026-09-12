@@ -38,15 +38,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
 
-      - name: Verify uploaded-firmware source identity
+      - name: Verify golden ITB identity and framework separation
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '^SOURCE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^GOLDEN_ITB_SHA256=472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503$' source.lock
+          grep -q '^GOLDEN_VERSION_BASE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^FRAMEWORK_COMMIT=b6bd44a7caf1b6979f1cb30433e33637b69e791e$' source.lock
           grep -q '^EXPECTED_KERNEL_RELEASE=6.18.44$' source.lock
           grep -q '472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503' docs/GOLDEN_BASELINE_FIRMWARE.md
-          grep -q 'r40915+7-d2dc130d7f' docs/GOLDEN_BASELINE_FIRMWARE.md
-          echo 'PASS: CI is pinned to the exact source revision embedded in the uploaded working ITB.'
+          grep -q 'sole functional golden baseline' docs/GOLDEN_BASELINE_FIRMWARE.md
+          grep -q 'source/build framework reference' docs/GOLDEN_BASELINE_FIRMWARE.md
+          echo 'PASS: uploaded ITB is the functional oracle; naoki is only the build framework.'
 
       - name: Compile EN7581 xPON with real ioctl paths
         shell: bash
@@ -86,16 +89,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget xsltproc curl kmod binutils device-tree-compiler
 
-      - name: Verify uploaded-firmware source identity
+      - name: Verify golden ITB identity and framework separation
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '^SOURCE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^GOLDEN_ITB_SHA256=472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503$' source.lock
+          grep -q '^GOLDEN_VERSION_BASE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7$' source.lock
+          grep -q '^FRAMEWORK_COMMIT=b6bd44a7caf1b6979f1cb30433e33637b69e791e$' source.lock
           grep -q '^EXPECTED_KERNEL_RELEASE=6.18.44$' source.lock
           grep -q '472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503' docs/GOLDEN_BASELINE_FIRMWARE.md
-          echo 'PASS: LAN/NPU smoke build uses the golden ITB source revision.'
+          echo 'PASS: LAN/NPU smoke build will use the framework, not redefine the golden baseline.'
 
-      - name: Build LAN/NPU smoke image on golden source revision
+      - name: Build LAN/NPU smoke image on reference framework
         shell: bash
         run: |
           set -euo pipefail

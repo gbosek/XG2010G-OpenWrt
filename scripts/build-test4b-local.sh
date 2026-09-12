@@ -5,8 +5,12 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="$REPO_ROOT/src"
 OUT="$REPO_ROOT/output/test4b"
 LOG="$OUT/logs"
-SOURCE_REPO="${SOURCE_REPO:-https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git}"
-SOURCE_COMMIT="${SOURCE_COMMIT:-b6bd44a7caf1b6979f1cb30433e33637b69e791e}"
+
+# The uploaded ITB is the functional baseline.  This public tree is only the
+# build framework that provides a recent XG2010G target on Linux 6.18.
+FRAMEWORK_REPO="${FRAMEWORK_REPO:-${SOURCE_REPO:-https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git}}"
+FRAMEWORK_COMMIT="${FRAMEWORK_COMMIT:-${SOURCE_COMMIT:-b6bd44a7caf1b6979f1cb30433e33637b69e791e}}"
+GOLDEN_ITB_SHA256="${GOLDEN_ITB_SHA256:-472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503}"
 JOBS="${JOBS:-2}"
 PON_MODE="${PON_MODE:-strict}"   # strict = final target; off = LAN/NPU smoke image only
 
@@ -34,14 +38,22 @@ stage() {
 }
 
 if [[ ! -d "$SRC/.git" ]]; then
-  git clone --filter=blob:none "$SOURCE_REPO" "$SRC"
+  git clone --filter=blob:none "$FRAMEWORK_REPO" "$SRC"
 fi
-git -C "$SRC" remote set-url origin "$SOURCE_REPO"
-git -C "$SRC" fetch --prune origin "$SOURCE_COMMIT"
-git -C "$SRC" reset --hard "$SOURCE_COMMIT"
+git -C "$SRC" remote set-url origin "$FRAMEWORK_REPO"
+git -C "$SRC" fetch --prune origin "$FRAMEWORK_COMMIT"
+git -C "$SRC" reset --hard "$FRAMEWORK_COMMIT"
 git -C "$SRC" clean -fd
-test "$(git -C "$SRC" rev-parse HEAD)" = "$SOURCE_COMMIT"
-printf '%s\n' "$SOURCE_COMMIT" > "$OUT/source-commit.txt"
+test "$(git -C "$SRC" rev-parse HEAD)" = "$FRAMEWORK_COMMIT"
+printf '%s\n' "$FRAMEWORK_COMMIT" > "$OUT/framework-commit.txt"
+printf '%s\n' "$GOLDEN_ITB_SHA256" > "$OUT/golden-itb-sha256.txt"
+
+# Hard guard: the framework commit must merely provide the build target.  The
+# board topology below is always reconstructed from the golden firmware facts.
+test -f "$SRC/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts" || {
+  echo "ERROR: selected framework commit has no XG2010G DTS target." >&2
+  exit 2
+}
 
 # Inject our package only for the strict PON-capable target. The package depends
 # on the real PON control stack and is intentionally not used in smoke mode.
@@ -91,7 +103,7 @@ if [[ "$PON_MODE" == strict ]]; then
   cat "$REPO_ROOT/configs/test4b-basefw-full-packages.config" >> .config
 else
   # Smoke mode is deliberately not presented as a final firmware. It is useful
-  # for proving the pinned baseline, LAN2/RTL8261 fixes and the basic image build
+  # for proving the build framework, LAN2/RTL8261 fixes and the basic image build
   # while the xPON driver is being repaired separately.
   grep -Ev '^CONFIG_PACKAGE_(airoha-oamd|airoha-omcid|airoha-pon-debug|airoha-ponctl|kmod-airoha-en7572|kmod-airoha-xpon|luci-app-pon|luci-i18n-pon-zh-cn)=' \
     "$REPO_ROOT/configs/test4b-basefw-full-packages.config" >> .config
@@ -118,11 +130,11 @@ if ((${#missing[@]})); then
   printf '  - %s\n' "${missing[@]}" >&2
   if [[ "$PON_MODE" == strict ]]; then
     cat >&2 <<'EOF'
-The pinned ImmortalWrt board baseline does not itself provide the complete
-working XG2010G xPON kernel package. This is an intentional hard stop: we will
-not silently build a firmware that looks complete but has no real PON driver.
-Run scripts/build-xpon-local.sh to repair/compile the public EN7581 xPON path.
-For LAN/NPU-only build-system smoke testing, run PON_MODE=off.
+The public build framework does not itself prove the complete working XG2010G
+xPON stack. This is an intentional hard stop: we will not silently build a
+firmware that looks complete but has no real PON driver. Run
+scripts/build-xpon-local.sh to repair/compile the EN7581 xPON path. For
+LAN/NPU-only build-system smoke testing, run PON_MODE=off.
 EOF
   fi
   exit 4
@@ -165,4 +177,4 @@ if [[ "$PON_MODE" == strict ]]; then
 else
   result="PASS: LAN/NPU smoke image build completed. PON is intentionally absent; DO NOT treat this as the final firmware."
 fi
-printf '%s\nImmortalWrt baseline: %s\n' "$result" "$SOURCE_COMMIT" | tee "$OUT/RESULT.txt"
+printf '%s\nGolden ITB: %s\nBuild framework: %s\n' "$result" "$GOLDEN_ITB_SHA256" "$FRAMEWORK_COMMIT" | tee "$OUT/RESULT.txt"

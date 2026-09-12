@@ -1,22 +1,36 @@
-# Public reference source used only to build the Test-1 RTL8261 module candidate.
-# It is NOT treated as the authoritative XG2010G board definition.
+# XG2010G build inputs are deliberately split into two independent roles.
 #
-# The user's known-good firmware identifies itself as:
-#   ImmortalWrt SNAPSHOT r40915+7-d2dc130d7f
-# and its installed kernel package is:
-#   6.18.44~4bcb1a05b9697b9f4a10913f6a454cb7-r1
-# Therefore Test-1 now pins the XG2010G tree at the matching d2dc130d7f
-# merge point instead of the newer 2026-09-07 tree. This minimizes PHY-driver
-# drift while preserving the XG2010G branch context.
-SOURCE_REPO=https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
-SOURCE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7
-KERNEL_FAMILY=6.18
+# 1) GOLDEN_* identifies the user's uploaded, working XG2010G ITB.  This is
+#    the functional oracle for board behaviour and regression checks.
+# 2) FRAMEWORK_* identifies a public source tree used only as a convenient
+#    OpenWrt/ImmortalWrt build framework.  It is NOT a functional baseline.
+#
+# The golden firmware identifies itself as ImmortalWrt SNAPSHOT
+# r40915+7-d2dc130d7f with Linux 6.18.44.  The d2dc revision is retained as
+# version/build provenance only.  At naoki66 commit d2dc130d7f the public tree
+# does not yet contain target/linux/airoha/dts/an7581-gemtek-xg2010g.dts, so it
+# must not be treated as a complete XG2010G source snapshot.
+
+GOLDEN_ITB_SHA256=472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503
+GOLDEN_VERSION_REVISION=r40915+7-d2dc130d7f
+GOLDEN_VERSION_BASE_COMMIT=d2dc130d7f8341741df04eaaf5fd4c74dcc447d7
 EXPECTED_KERNEL_RELEASE=6.18.44
 EXPECTED_KERNEL_ABI=4bcb1a05b9697b9f4a10913f6a454cb7
 
-# Golden board facts come from the user's known-good XG2010G 6.18.44 binary and stock backups:
+# Public source/compile framework only.  Board behaviour must be reconstructed
+# and checked against the uploaded golden ITB, never inherited by assumption.
+FRAMEWORK_REPO=https://github.com/naoki66/ImmortalWrt-for-Gemtek-XG2010G.git
+FRAMEWORK_COMMIT=b6bd44a7caf1b6979f1cb30433e33637b69e791e
+
+# Backward-compatible aliases for older local scripts/workflows.  New code
+# should use FRAMEWORK_REPO / FRAMEWORK_COMMIT explicitly.
+SOURCE_REPO=$FRAMEWORK_REPO
+SOURCE_COMMIT=$FRAMEWORK_COMMIT
+KERNEL_FAMILY=6.18
+
+# Golden board facts recovered from the user's working XG2010G binary/backups:
 # RTL8261BE @ 0x08 reset GPIO27, host PCS 0x1fa04000
 # RTL8261BE @ 0x05 reset GPIO29, host PCS 0x1fa09000
 # EN8811H @ 0x0f, 2500BASE-X, host PCS 0x1fa07000
-# PON calibration = DSD/factory offset 0x12000 length 0x200
+# PON calibration = factory/DSD logical data offset 0x12000 length 0x200
 # NPU/PPE baseline keeps QDMA_WAN_ETHER (wan_mode=1)

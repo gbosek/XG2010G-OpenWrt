@@ -8,6 +8,50 @@ print_common() {
   echo "Interfaces: $(ls /sys/class/net 2>/dev/null | tr '\n' ' ')"
 }
 
+print_ethtool_stats() {
+  command -v ethtool >/dev/null 2>&1 || {
+    echo "ethtool: unavailable"
+    return
+  }
+
+  for dev in lan1 lan2 lan3 lan4 eth0 eth1 eth2 eth3 eth4; do
+    [ -e "/sys/class/net/$dev" ] || continue
+    echo "### $dev link"
+    ethtool "$dev" 2>/dev/null | grep -E 'Speed:|Duplex:|Auto-negotiation:|Link detected:' || true
+    echo "### $dev statistics"
+    # Airoha 6.18 exposes MAC/RMON counters through ethtool.  Keep all driver
+    # counters so runtime tests can compare before/after snapshots and prove
+    # that the selected GDM/QDMA path is carrying traffic.
+    ethtool -S "$dev" 2>/dev/null || echo "no driver statistics"
+    echo
+  done
+}
+
+print_flow_state() {
+  echo "--- nftables flowtables ---"
+  nft list flowtables 2>/dev/null || true
+  echo
+  echo "--- nftables rules containing flow offload ---"
+  nft list ruleset 2>/dev/null | grep -Ei -C 2 'flowtable|flow offload|flow add|offload' || true
+  echo
+  echo "--- tc hardware-offload state ---"
+  for dev in lan1 lan2 lan3 lan4 eth0 eth1 eth2 eth3 eth4; do
+    [ -e "/sys/class/net/$dev" ] || continue
+    echo "### $dev"
+    tc -s filter show dev "$dev" ingress 2>/dev/null || true
+    tc -s filter show dev "$dev" egress 2>/dev/null || true
+  done
+}
+
+print_candidate_nodes() {
+  for root in /sys/kernel/debug /proc /sys; do
+    [ -d "$root" ] || continue
+    find "$root" -maxdepth 5 \
+      \( -iname '*npu*' -o -iname '*ppe*' -o -iname '*qdma*' -o -iname '*foe*' \) \
+      2>/dev/null
+  done | sort -u | head -n 180
+}
+
 case "$mode" in
   pon)
     echo "=== XG2010G PON diagnostics ==="
@@ -26,11 +70,15 @@ case "$mode" in
     echo "--- kernel log ---"
     dmesg 2>/dev/null | grep -Ei 'airoha-npu|npu|ppe|qdma|foe|flow.?offload' | tail -n 160
     echo
-    echo "--- flow offload / nftables ---"
-    nft list flowtables 2>/dev/null || true
+    print_flow_state
+    echo
+    echo "--- Airoha/GDM/QDMA interface counters ---"
+    print_ethtool_stats
     echo
     echo "--- candidate proc/sysfs/debugfs nodes ---"
-    find /proc /sys/kernel/debug /sys -maxdepth 4 \( -iname '*npu*' -o -iname '*ppe*' -o -iname '*qdma*' -o -iname '*foe*' \) 2>/dev/null | head -n 120
+    print_candidate_nodes
+    echo
+    echo "NOTE: a single snapshot does not prove hardware offload. Capture this page before and during a routed iperf3 flow; PPE/FOE/QDMA/GDM counters must change consistently while nft flow offload is active."
     ;;
   *)
     echo "usage: $0 pon|npu" >&2

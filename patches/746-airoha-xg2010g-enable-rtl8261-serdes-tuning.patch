@@ -14,7 +14,7 @@ SerDes recovery used to repair the USXGMII/PCS carrier failure.
 
 --- a/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
 +++ b/target/linux/airoha/dts/an7581-gemtek-xg2010g.dts
-@@ -13,6 +13,30 @@
+@@ -13,6 +13,26 @@
  	};
  };
  

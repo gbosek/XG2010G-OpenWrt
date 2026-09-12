@@ -1,0 +1,119 @@
+{
+  "source": {
+    "file": "immortalwrt-airoha-an7581-gemtek_xg2010g-squashfs-sysupgrade (1)(1).itb",
+    "itb_size": 14098704,
+    "itb_sha256": "472d1aa72469cd6f173bde70e4ae55d8ac0e00b0af064e5fc2ab236b0501f503",
+    "fdt_size": 22037,
+    "fdt_sha256": "7576c79b41d3d0b2992452b2216d605db17c5c05e0d291e61845551ecee87f38"
+  },
+  "ports": {
+    "lan1": {
+      "kind": "switch-port",
+      "reg": 4,
+      "phy_mode": "internal"
+    },
+    "lan2": {
+      "kind": "airoha,eth-port",
+      "reg": 4,
+      "phy_mode": "2500base-x",
+      "phy_node": "ethernet-phy@f",
+      "phy_reg": 15,
+      "pcs_node": "pcs@1fa07000",
+      "pcs_lane": null
+    },
+    "lan3": {
+      "kind": "airoha,eth-port",
+      "reg": 5,
+      "phy_mode": "usxgmii",
+      "phy_node": "ethernet-phy@8",
+      "phy_reg": 8,
+      "pcs_node": "pcs@1fa04000",
+      "pcs_lane": 1
+    },
+    "lan4": {
+      "kind": "airoha,eth-mac",
+      "reg": 4,
+      "phy_mode": "usxgmii",
+      "phy_node": "ethernet-phy@5",
+      "phy_reg": 5,
+      "pcs_node": "pcs@1fa09000",
+      "pcs_lane": null
+    }
+  },
+  "phys": {
+    "ethernet-phy@f": {
+      "compatible": "ethernet-phy-id03a2.a411",
+      "reg": 15,
+      "reset_gpios": null
+    },
+    "ethernet-phy@8": {
+      "compatible": "ethernet-phy-ieee802.3-c45",
+      "reg": 8,
+      "reset_gpio_pin": 27,
+      "reset_gpio_flags": 1,
+      "reset_assert_us": 200000,
+      "reset_deassert_us": 200000
+    },
+    "ethernet-phy@5": {
+      "compatible": "ethernet-phy-ieee802.3-c45",
+      "reg": 5,
+      "reset_gpio_pin": 29,
+      "reset_gpio_flags": 1,
+      "reset_assert_us": 200000,
+      "reset_deassert_us": 200000
+    }
+  },
+  "pcs": {
+    "pcs@1fa04000": { "compatible": "airoha,an7581-pcs-pcie", "status": "okay", "pcs_cells": 1 },
+    "pcs@1fa07000": { "compatible": "airoha,an7581-pcs-usb", "status": "okay", "pcs_cells": 0 },
+    "pcs@1fa08000": { "compatible": "airoha,an7581-pcs-pon", "status": "okay", "pcs_cells": 0 },
+    "pcs@1fa09000": { "compatible": "airoha,an7581-pcs-eth", "status": "okay", "pcs_cells": 0 }
+  },
+  "pon": {
+    "xpon_mac_compatible": "airoha,an7581-xpon-mac",
+    "xpon_mac_reg": 532037632,
+    "pon_pcs_node": "pcs@1fa08000",
+    "en7572_compatible": "airoha,en7572",
+    "en7572_i2c_reg": 80,
+    "en7572_tx_disable_gpio_pin": 38,
+    "calibration_offset": 73728,
+    "calibration_size": 512,
+    "gdm2_reg": 2,
+    "gdm2_pon_data_path": true
+  },
+  "npu": {
+    "compatible": "airoha,en7581-npu",
+    "reg": 513802240,
+    "status": "okay",
+    "reserved_npu_base": 2214592512,
+    "reserved_npu_size": 10485760,
+    "qdma0_base": 2264924160,
+    "qdma0_size": 33554432,
+    "qdma1_base": 2298478592,
+    "qdma1_size": 16777216
+  },
+  "ethernet": {
+    "compatible": "airoha,en7581-eth",
+    "reg": 532021248,
+    "status": "okay"
+  },
+  "storage": {
+    "ubi_offset": 131072,
+    "calibration_offset": 73728,
+    "calibration_size": 512
+  },
+  "candidate_only_requirements": {
+    "rtl8261_required_property": "realtek,patch-rtk-serdes",
+    "rtl8261_forbidden_properties_for_first_test": [
+      "realtek,sds-mode",
+      "tx-polarity",
+      "rx-polarity",
+      "reset-before-id-read"
+    ],
+    "en8811_forbidden_inherited_properties": [
+      "reset-gpios",
+      "reset-assert-us",
+      "reset-deassert-us"
+    ]
+  }
+}

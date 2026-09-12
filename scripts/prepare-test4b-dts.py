@@ -50,7 +50,7 @@ for old, new in (
 
 marker = "/* Test-4B: topology reconstructed from the user's working base firmware DTB. */"
 if marker in s:
-    raise SystemExit("DTS already contains the Test-4B topology; reset the pinned baseline before preparing it again")
+    raise SystemExit("DTS already contains the Test-4B topology; reset the pinned framework before preparing it again")
 
 s += r'''
 
@@ -90,6 +90,7 @@ s += r'''
     #size-cells = <0>;
 
     ethernet-port@4 {
+      compatible = "airoha,eth-port";
       reg = <4>;
       openwrt,netdev-name = "lan2";
       phy-handle = <&en8811>;
@@ -98,6 +99,7 @@ s += r'''
     };
 
     ethernet-port@5 {
+      compatible = "airoha,eth-port";
       reg = <5>;
       openwrt,netdev-name = "lan3";
       phy-handle = <&rtl8261_8>;
@@ -122,6 +124,13 @@ required = (
 for needle in required:
     if needle not in s:
         raise SystemExit(f"prepared DTS is missing required token: {needle}")
+
+# The AN7581 multi-SerDes driver only instantiates GDM3/GDM4 child netdevs
+# whose child nodes are explicitly compatible with "airoha,eth-port".
+# Without these compatibles it silently falls back to a single parent GDM3
+# netdev and lan2/lan3 disappear even though their DTS text exists.
+if s.count('compatible = "airoha,eth-port";') < 2:
+    raise SystemExit("prepared DTS is missing Airoha multi-SerDes eth-port compatibles")
 
 p.write_text(s)
 print(f"PASS: prepared {p}")
